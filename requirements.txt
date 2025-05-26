@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+aiortc
+ultralytics
+openvino
+numpy

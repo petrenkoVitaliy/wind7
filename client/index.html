@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Vision Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] {
+            display: none !important;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            touch-action: none;
+            height: 100dvh;
+        }
+
+        #container {
+            height: 100dvh;
+            width: 100vw;
+            position: relative;
+        }
+
+        canvas {
+            object-fit: cover;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .glass {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body x-data="visionApp" class="text-white text-sm">
+
+    <div id="container">
+        <video id="video" x-ref="video" autoplay playsinline class="hidden"></video>
+        <canvas id="canvas" x-ref="canvas"></canvas>
+
+        <div class="absolute top-6 left-0 right-0 px-6 flex justify-between items-center z-50">
+            <div class="glass px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+                <div class="w-2 h-2 rounded-full" :class="connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'">
+                </div>
+                <span class="text-xs font-mono tracking-widest" x-text="connected ? 'LIVE' : 'OFFLINE'"></span>
+            </div>
+
+            <div class="flex gap-2">
+                <button @click="showMetrics = !showMetrics" class="glass p-2 rounded-full hover:bg-white/20 transition"
+                    :class="showMetrics ? 'text-green-400' : 'text-white'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 6h16M4 12h16M4 18h7" />
+                    </svg>
+                </button>
+                <button @click="window.location.reload()" class="glass p-2 rounded-full hover:bg-white/10">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div x-show="showMetrics" x-transition class="absolute top-20 left-6 z-40 pointer-events-none">
+            <div class="glass px-3 py-2 rounded-xl flex flex-col gap-1 text-[10px] font-mono text-green-400">
+                <div>Ping: <span class="text-white" x-text="latency"></span>ms</div>
+                <div>FPS (Client): <span class="text-white" x-text="clientFps"></span></div>
+                <div>FPS (AI): <span class="text-white" x-text="serverFps"></span></div>
+                <div class="w-full h-px bg-white/20 my-0.5"></div>
+                <div>Pre: <span class="text-gray-300" x-text="metrics.pre"></span>ms</div>
+                <div>Inf: <span class="text-white font-bold" x-text="metrics.inf"></span>ms</div>
+                <div>Post: <span class="text-gray-300" x-text="metrics.post"></span>ms</div>
+                <div>Total: <span class="text-yellow-400" x-text="metrics.total"></span>ms</div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-6 left-4 right-4 z-50 mb-safe">
+            <div class="glass rounded-3xl p-4 flex flex-col gap-3 shadow-2xl">
+
+                <div class="grid grid-cols-2 gap-2">
+                    <select x-model="config.task" @change="sendConfig()"
+                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold">
+                        <option value="track">Track (IDs)</option>
+                        <option value="predict">Predict (No IDs)</option>
+                    </select>
+
+                    <select x-model="config.model" @change="sendConfig()"
+                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold text-green-400">
+                        <template x-for="m in models" :key="m">
+                            <option :value="m" x-text="m"></option>
+                        </template>
+                    </select>
+
+                    <select x-model="qualityName" @change="applyQuality()"
+                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold">
+                        <template x-for="q in qualities" :key="q.name">
+                            <option :value="q.name" x-text="q.name + ' (' + q.res + ')'"></option>
+                        </template>
+                    </select>
+
+                    <select x-model="mode"
+                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold">
+                        <option value="boxes">Show: Boxes</option>
+                        <option value="stained">Show: Masks</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-3 text-xs px-1">
+                    <span class="opacity-70 font-mono">CONF</span>
+                    <input type="range" min="0.1" max="0.9" step="0.05" x-model="config.conf" @change="sendConfig()"
+                        class="flex-1 accent-green-500">
+                    <span class="w-8 text-right font-mono text-green-400" x-text="config.conf"></span>
+                </div>
+
+                <div class="flex justify-between items-center bg-black/40 px-4 py-3 rounded-xl border border-white/5">
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold" :class="syncMode ? 'text-green-400' : 'text-white'">Sync
+                            Render</span>
+                        <span class="text-[9px] opacity-60">Wait for accurate masks</span>
+                    </div>
+                    <button @click="toggleSync()" class="w-12 h-6 rounded-full relative transition-colors duration-300"
+                        :class="syncMode ? 'bg-green-500' : 'bg-gray-600'">
+                        <div class="absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300"
+                            :class="syncMode ? 'left-7' : 'left-1'"></div>
+                    </button>
+                </div>
+
+                <button @click="connected ? stop() : start()"
+                    class="w-full py-3.5 rounded-xl font-bold tracking-wide shadow-lg active:scale-[0.98] transition-all"
+                    :class="connected ? 'bg-red-500/90 text-white' : 'bg-white text-black'">
+                    <span x-text="connected ? 'STOP CAMERA' : 'LAUNCH AI'"></span>
+                </button>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('visionApp', () => ({
+                connected: false,
+                mode: 'stained',
+                showMetrics: true,
+                syncMode: false,
+
+                config: { model: '', task: 'track', conf: 0.4 },
+                metrics: { pre: 0, inf: 0, post: 0, total: 0 },
+                clientFps: 0, serverFps: 0, latency: 0,
+                models: [],
+
+                qualityName: 'High Accuracy',
+                currentQuality: { name: 'High Accuracy', w: 1280, h: 720, res: '720p' },
+                qualities: [
+                    { name: 'High Accuracy', w: 1280, h: 720, res: '720p' },
+                    { name: 'Balanced', w: 640, h: 480, res: '480p' },
+                    { name: 'Performance', w: 320, h: 240, res: '240p' },
+                ],
+
+                pc: null, dc: null,
+                currentPredictions: [],
+                lastFrameTime: performance.now(),
+                lastServerTime: performance.now(),
+
+                frameBuffer: [],
+                captureFrameId: null,
+
+                async init() {
+                    try {
+                        const res = await fetch('/models');
+                        const data = await res.json();
+                        this.models = data.models;
+                        if (this.models.length > 0) this.config.model = this.models[0];
+                    } catch (e) { console.error("Models fetch failed"); }
+
+                    setInterval(() => this.measureLatency(), 1000);
+                },
+
+                measureLatency() {
+                    if (this.dc && this.dc.readyState === 'open') {
+                        this.dc.send(JSON.stringify({ type: 'ping', timestamp: performance.now() }));
+                    }
+                },
+
+                async start() {
+                    const constraints = { video: { width: { ideal: this.currentQuality.w }, height: { ideal: this.currentQuality.h }, facingMode: 'environment' } };
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.$refs.video.srcObject = stream;
+                        this.connected = true;
+
+                        this.$refs.video.onloadedmetadata = () => {
+                            this.$refs.canvas.width = this.$refs.video.videoWidth;
+                            this.$refs.canvas.height = this.$refs.video.videoHeight;
+                            this.startCaptureLoop();
+                        };
+                        this.setupWebRTC(stream);
+                    } catch (err) { alert("Camera error: " + err); }
+                },
+
+                stop() {
+                    if (this.$refs.video.srcObject) this.$refs.video.srcObject.getTracks().forEach(t => t.stop());
+                    if (this.pc) this.pc.close();
+                    if (this.captureFrameId) cancelAnimationFrame(this.captureFrameId);
+                    this.connected = false;
+                    this.currentPredictions = [];
+
+                    this.frameBuffer.forEach(f => f.bitmap.close());
+                    this.frameBuffer = [];
+
+                    const ctx = this.$refs.canvas.getContext('2d');
+                    ctx.clearRect(0, 0, this.$refs.canvas.width, this.$refs.canvas.height);
+                },
+
+                async applyQuality() {
+                    const q = this.qualities.find(x => x.name === this.qualityName);
+                    if (q) {
+                        this.currentQuality = q;
+                        if (this.connected) { this.stop(); await this.start(); }
+                    }
+                },
+
+                sendConfig() {
+                    if (this.dc && this.dc.readyState === 'open') {
+                        this.dc.send(JSON.stringify({
+                            type: 'config', model: this.config.model, task: this.config.task, conf: parseFloat(this.config.conf)
+                        }));
+                    }
+                },
+
+                toggleSync() {
+                    this.syncMode = !this.syncMode;
+                },
+
+                setupWebRTC(stream) {
+
+                    const config = {
+                        iceServers: [
+                            { urls: "stun:stun.l.google.com:19302" },
+                            {
+                                urls: [
+                                    "turn:openrelay.metered.ca:80",
+                                    "turn:openrelay.metered.ca:443",
+                                    "turn:openrelay.metered.ca:443?transport=tcp"
+                                ],
+                                username: "openrelayproject",
+                                credential: "openrelayproject"
+                            }
+                        ]
+                    };
+                    this.pc = new RTCPeerConnection(config);
+                    this.dc = this.pc.createDataChannel("results");
+                    this.dc.onopen = () => this.sendConfig();
+
+                    this.dc.onmessage = (evt) => {
+                        const payload = JSON.parse(evt.data);
+
+                        if (payload.type === 'pong') {
+                            this.latency = Math.round(performance.now() - payload.timestamp);
+                            return;
+                        }
+                        if (payload.metrics) {
+                            this.currentPredictions = payload.data;
+                            this.metrics = payload.metrics;
+
+                            const now = performance.now();
+                            this.serverFps = Math.round(1000 / (now - this.lastServerTime));
+                            this.lastServerTime = now;
+
+                            if (this.syncMode && this.connected) {
+                                const estimatedAge = performance.now() - this.latency - this.metrics.total;
+
+                                let bestMatch = null;
+                                let minDiff = Infinity;
+
+                                for (let i = 0; i < this.frameBuffer.length; i++) {
+                                    const diff = Math.abs(this.frameBuffer[i].time - estimatedAge);
+                                    if (diff < minDiff) {
+                                        minDiff = diff;
+                                        bestMatch = this.frameBuffer[i].bitmap;
+                                    }
+                                }
+
+                                if (bestMatch) {
+                                    this.drawCanvas(bestMatch);
+                                }
+                            }
+                        }
+                    };
+
+                    stream.getTracks().forEach(track => this.pc.addTrack(track, stream));
+                    this.pc.createOffer().then(offer => this.pc.setLocalDescription(offer))
+                        .then(() => fetch('/offer', { method: 'POST', body: JSON.stringify({ sdp: this.pc.localDescription.sdp, type: this.pc.localDescription.type }), headers: { 'Content-Type': 'application/json' } }))
+                        .then(res => res.json())
+                        .then(answer => this.pc.setRemoteDescription(answer));
+                },
+
+                async startCaptureLoop() {
+                    if (!this.connected) return;
+
+                    if (this.$refs.video.readyState >= 2) {
+                        try {
+                            const bitmap = await createImageBitmap(this.$refs.video);
+                            const now = performance.now();
+                            this.frameBuffer.push({ time: now, bitmap });
+
+                            while (this.frameBuffer.length > 0 && now - this.frameBuffer[0].time > 1500) {
+                                const old = this.frameBuffer.shift();
+                                old.bitmap.close();
+                            }
+                        } catch (e) { }
+                    }
+
+                    if (!this.syncMode && this.frameBuffer.length > 0) {
+                        const latestFrame = this.frameBuffer[this.frameBuffer.length - 1].bitmap;
+                        this.drawCanvas(latestFrame);
+                    }
+
+                    this.captureFrameId = requestAnimationFrame(() => this.startCaptureLoop());
+                },
+
+                drawCanvas(imageSource) {
+                    const canvas = this.$refs.canvas;
+                    const ctx = canvas.getContext('2d');
+
+                    const now = performance.now();
+                    this.clientFps = Math.round(1000 / (now - this.lastFrameTime));
+                    this.lastFrameTime = now;
+
+                    if (canvas.width !== imageSource.width) {
+                        canvas.width = imageSource.width;
+                        canvas.height = imageSource.height;
+                    }
+
+                    ctx.drawImage(imageSource, 0, 0, canvas.width, canvas.height);
+
+                    this.currentPredictions.forEach(pred => {
+                        const hasId = pred.id !== undefined && pred.id !== -1;
+                        const color = hasId ? `hsl(${(pred.id * 60) % 360}, 100%, 50%)` : '#00ff00';
+                        const w = canvas.width; const h = canvas.height;
+                        const [x1, y1, x2, y2] = [pred.box[0] * w, pred.box[1] * h, pred.box[2] * w, pred.box[3] * h];
+
+                        if (this.mode === 'boxes') {
+                            ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                            ctx.fillStyle = color; ctx.font = 'bold 14px monospace';
+                            const label = `${pred.label} ${hasId ? 'ID:' + pred.id : ''} ${pred.conf}`;
+                            ctx.fillText(label, x1, y1 - 8);
+                        } else if (this.mode === 'stained' && pred.mask && pred.mask.length > 0) {
+                            ctx.save(); ctx.beginPath();
+                            const pts = pred.mask.map(p => [p[0] * w, p[1] * h]);
+                            ctx.moveTo(pts[0][0], pts[0][1]);
+                            pts.forEach(p => ctx.lineTo(p[0], p[1]));
+                            ctx.closePath();
+
+                            ctx.globalAlpha = 0.45;
+                            ctx.fillStyle = color;
+                            ctx.fill();
+
+                            ctx.globalAlpha = 1.0;
+                            ctx.strokeStyle = color;
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                            ctx.restore();
+                        }
+                    });
+                }
+            }));
+        });
+    </script>
+</body>
+
+</html>
