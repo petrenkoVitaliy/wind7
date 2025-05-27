@@ -3,7 +3,7 @@ title: Wind7
 emoji: 🚀
 colorFrom: green
 colorTo: purple
-sdk: static
+sdk: docker
 pinned: false
 ---
 
