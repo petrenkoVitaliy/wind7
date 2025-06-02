@@ -253,11 +253,20 @@
                                 username: "openrelayproject",
                                 credential: "openrelayproject"
                             }
-                        ]
+                        ],
+                        iceTransportPolicy: "relay"
                     };
                     this.pc = new RTCPeerConnection(config);
                     this.dc = this.pc.createDataChannel("results");
                     this.dc.onopen = () => this.sendConfig();
+
+                    this.pc.oniceconnectionstatechange = () => {
+                        console.log("ICE Connection State:", this.pc.iceConnectionState);
+                    };
+
+                    this.pc.onicecandidateerror = (e) => {
+                        console.log("ICE Error:", e.url, e.errorCode, e.errorText);
+                    };
 
                     this.dc.onmessage = (evt) => {
                         const payload = JSON.parse(evt.data);
