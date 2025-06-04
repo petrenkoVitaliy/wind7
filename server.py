@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCConfiguration, RTCIceServer
@@ -42,17 +43,23 @@ current_config = {
 model_config = ModelsConfig[current_config['model_name']].value
 model = YOLO(model_config.path, task='segment')
 
+TURN_USERNAME = os.environ.get("TURN_USERNAME", "fallback_user")
+TURN_CREDENTIAL = os.environ.get("TURN_CREDENTIAL", "fallback_pass")
+
 rtc_config = RTCConfiguration(
     iceServers=[
         RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
         RTCIceServer(
-            urls=["turn:openrelay.metered.ca:443?transport=tcp"],
-            username="openrelayproject",
-            credential="openrelayproject"
+            urls=[
+                "turn:global.relay.metered.ca:80",
+                "turn:global.relay.metered.ca:443",
+                "turn:global.relay.metered.ca:443?transport=tcp"
+            ],
+            username=TURN_USERNAME,
+            credential=TURN_CREDENTIAL
         )
     ]
 )
-
 app = FastAPI()
 relay = MediaRelay()
 
@@ -173,6 +180,25 @@ async def async_reload_model(target_model_name):
         print(f"Model reloaded successfully: {target_model_name}")
     except Exception as e:
         print(f"Failed to reload model: {e}")
+
+
+@app.get("/ice-config")
+async def get_ice_config():
+    return {
+        "iceServers": [
+            {"urls": "stun:stun.l.google.com:19302"},
+            {
+                "urls": [
+                    "turn:global.relay.metered.ca:80",
+                    "turn:global.relay.metered.ca:443",
+                    "turn:global.relay.metered.ca:443?transport=tcp"
+                ],
+                "username": os.environ.get("TURN_USERNAME"),
+                "credential": os.environ.get("TURN_CREDENTIAL")
+            }
+        ],
+        "iceTransportPolicy": "relay"
+    }
 
 
 @app.get("/models")

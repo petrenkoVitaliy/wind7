@@ -201,7 +201,7 @@
                             this.$refs.canvas.height = this.$refs.video.videoHeight;
                             this.startCaptureLoop();
                         };
-                        this.setupWebRTC(stream);
+                        await this.setupWebRTC(stream);
                     } catch (err) { alert("Camera error: " + err); }
                 },
 
@@ -239,23 +239,10 @@
                     this.syncMode = !this.syncMode;
                 },
 
-                setupWebRTC(stream) {
+                async setupWebRTC(stream) {
+                    const response = await fetch('/ice-config');
+                    const config = await response.json();
 
-                    const config = {
-                        iceServers: [
-                            { urls: "stun:stun.l.google.com:19302" },
-                            {
-                                urls: [
-                                    "turn:openrelay.metered.ca:80",
-                                    "turn:openrelay.metered.ca:443",
-                                    "turn:openrelay.metered.ca:443?transport=tcp"
-                                ],
-                                username: "openrelayproject",
-                                credential: "openrelayproject"
-                            }
-                        ],
-                        iceTransportPolicy: "relay"
-                    };
                     this.pc = new RTCPeerConnection(config);
                     this.dc = this.pc.createDataChannel("results");
                     this.dc.onopen = () => this.sendConfig();
