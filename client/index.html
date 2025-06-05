@@ -291,11 +291,36 @@
                         }
                     };
 
-                    stream.getTracks().forEach(track => this.pc.addTrack(track, stream));
-                    this.pc.createOffer().then(offer => this.pc.setLocalDescription(offer))
-                        .then(() => fetch('/offer', { method: 'POST', body: JSON.stringify({ sdp: this.pc.localDescription.sdp, type: this.pc.localDescription.type }), headers: { 'Content-Type': 'application/json' } }))
-                        .then(res => res.json())
-                        .then(answer => this.pc.setRemoteDescription(answer));
+                    const offer = await this.pc.createOffer();
+                    await this.pc.setLocalDescription(offer);
+
+                    await new Promise((resolve) => {
+                        if (this.pc.iceGatheringState === 'complete') {
+                            resolve();
+                        } else {
+                            this.pc.addEventListener('icegatheringstatechange', () => {
+                                if (this.pc.iceGatheringState === 'complete') {
+                                    resolve();
+                                }
+                            });
+                        }
+                    });
+
+                    try {
+                        const res = await fetch('/offer', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                sdp: this.pc.localDescription.sdp,
+                                type: this.pc.localDescription.type
+                            }),
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+
+                        const answer = await res.json();
+                        await this.pc.setRemoteDescription(answer);
+                    } catch (err) {
+                        console.error("Signaling error:", err);
+                    }
                 },
 
                 async startCaptureLoop() {

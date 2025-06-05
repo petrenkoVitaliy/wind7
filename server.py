@@ -52,8 +52,7 @@ rtc_config = RTCConfiguration(
         RTCIceServer(
             urls=[
                 "turn:global.relay.metered.ca:80",
-                "turn:global.relay.metered.ca:443",
-                "turn:global.relay.metered.ca:443?transport=tcp"
+                "turn:global.relay.metered.ca:80?transport=tcp"
             ],
             username=TURN_USERNAME,
             credential=TURN_CREDENTIAL
@@ -190,14 +189,12 @@ async def get_ice_config():
             {
                 "urls": [
                     "turn:global.relay.metered.ca:80",
-                    "turn:global.relay.metered.ca:443",
-                    "turn:global.relay.metered.ca:443?transport=tcp"
+                    "turn:global.relay.metered.ca:80?transport=tcp"
                 ],
                 "username": os.environ.get("TURN_USERNAME"),
                 "credential": os.environ.get("TURN_CREDENTIAL")
             }
-        ],
-        "iceTransportPolicy": "relay"
+        ]
     }
 
 
