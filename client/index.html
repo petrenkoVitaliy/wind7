@@ -42,7 +42,8 @@
 <body x-data="visionApp" class="text-white text-sm">
 
     <div id="container">
-        <video id="video" x-ref="video" autoplay playsinline class="hidden"></video>
+        <video id="video" x-ref="video" autoplay playsinline
+            style="position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px;"></video>
         <canvas id="canvas" x-ref="canvas"></canvas>
 
         <div class="absolute top-6 left-0 right-0 px-6 flex justify-between items-center z-50">
