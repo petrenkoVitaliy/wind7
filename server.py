@@ -10,6 +10,10 @@ from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -46,19 +50,22 @@ model = YOLO(model_config.path, task='segment')
 TURN_USERNAME = os.environ.get("TURN_USERNAME", "fallback_user")
 TURN_CREDENTIAL = os.environ.get("TURN_CREDENTIAL", "fallback_pass")
 
-rtc_config = RTCConfiguration(
-    iceServers=[
-        RTCIceServer(urls=["stun:stun.l.google.com:19302"]),
-        RTCIceServer(
-            urls=[
-                "turn:global.relay.metered.ca:80",
-                "turn:global.relay.metered.ca:80?transport=tcp"
-            ],
-            username=TURN_USERNAME,
-            credential=TURN_CREDENTIAL
-        )
-    ]
-)
+ice_servers = [
+    RTCIceServer(urls=["stun:stun.relay.metered.ca:80"]),
+    RTCIceServer(
+        urls=[
+            "turn:global.relay.metered.ca:80",
+            "turn:global.relay.metered.ca:443",
+            "turn:global.relay.metered.ca:80?transport=tcp",
+            "turns:global.relay.metered.ca:443?transport=tcp"
+        ],
+        username=TURN_USERNAME,
+        credential=TURN_CREDENTIAL
+    )
+]
+
+rtc_config = RTCConfiguration(iceServers=ice_servers)
+
 app = FastAPI()
 relay = MediaRelay()
 
@@ -185,14 +192,16 @@ async def async_reload_model(target_model_name):
 async def get_ice_config():
     return {
         "iceServers": [
-            {"urls": "stun:stun.l.google.com:19302"},
+            {"urls": "stun:stun.relay.metered.ca:80"},
             {
                 "urls": [
                     "turn:global.relay.metered.ca:80",
-                    "turn:global.relay.metered.ca:80?transport=tcp"
+                    "turn:global.relay.metered.ca:443",
+                    "turn:global.relay.metered.ca:80?transport=tcp",
+                    "turns:global.relay.metered.ca:443?transport=tcp"
                 ],
-                "username": os.environ.get("TURN_USERNAME"),
-                "credential": os.environ.get("TURN_CREDENTIAL")
+                "username": TURN_USERNAME,
+                "credential": TURN_CREDENTIAL
             }
         ]
     }

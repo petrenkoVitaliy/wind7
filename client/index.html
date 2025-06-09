@@ -295,33 +295,13 @@
                     const offer = await this.pc.createOffer();
                     await this.pc.setLocalDescription(offer);
 
-                    await new Promise((resolve) => {
-                        if (this.pc.iceGatheringState === 'complete') {
-                            resolve();
-                        } else {
-                            this.pc.addEventListener('icegatheringstatechange', () => {
-                                if (this.pc.iceGatheringState === 'complete') {
-                                    resolve();
-                                }
-                            });
-                        }
-                    });
-
-                    try {
-                        const res = await fetch('/offer', {
-                            method: 'POST',
-                            body: JSON.stringify({
-                                sdp: this.pc.localDescription.sdp,
-                                type: this.pc.localDescription.type
-                            }),
-                            headers: { 'Content-Type': 'application/json' }
-                        });
-
-                        const answer = await res.json();
-                        await this.pc.setRemoteDescription(answer);
-                    } catch (err) {
-                        console.error("Signaling error:", err);
-                    }
+                    fetch('/offer', {
+                        method: 'POST',
+                        body: JSON.stringify({ sdp: this.pc.localDescription.sdp, type: this.pc.localDescription.type }),
+                        headers: { 'Content-Type': 'application/json' }
+                    })
+                        .then(res => res.json())
+                        .then(answer => this.pc.setRemoteDescription(answer));
                 },
 
                 async startCaptureLoop() {
