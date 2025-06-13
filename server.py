@@ -187,7 +187,7 @@ async def get_ice_config():
 
 @app.get("/")
 async def index():
-    with open("index.html", "r", encoding="utf-8") as f:
+    with open("client/index.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
 if __name__ == "__main__":
