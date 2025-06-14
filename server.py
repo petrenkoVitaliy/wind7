@@ -1,58 +1,75 @@
-import os
-import json
 import asyncio
-import cv2
-import numpy as np
-import time
+import json
+import os
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCIceServer, RTCConfiguration
-from aiortc.rtcrtpsender import RTCRtpSender
+from fastapi.responses import FileResponse
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCConfiguration, RTCIceServer
+from aiortc.contrib.media import MediaRelay
 from ultralytics import YOLO
+from enum import Enum
+from dataclasses import dataclass
+from pathlib import Path
 
-# Обмежуємо кількість потоків, щоб не вбити CPU на Hugging Face
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
-app = FastAPI()
 
-# --- Конфігурація моделі ---
-MODEL_PATH = "S26_OPENVINO_640"  # Твоя папка з OpenVINO моделлю
-try:
-    model = YOLO(MODEL_PATH, task='segment')
-    # Прогрів моделі (Warmup)
-    model.predict(np.zeros((320, 320, 3), dtype=np.uint8),
-                  imgsz=320, verbose=False)
-    print("✅ Model loaded and warmed up!")
-except Exception as e:
-    print(f"❌ Error loading model: {e}")
+@dataclass(frozen=True)
+class ModelConfig:
+    size: int
+    name: str
+    path: Path
 
-# --- Налаштування WebRTC (твоя розширена конфігурація) ---
-TURN_USERNAME = os.environ.get("TURN_USERNAME", "fake")
-TURN_CREDENTIAL = os.environ.get("TURN_CREDENTIAL", "fake")
 
-ICE_SERVERS = [
+MODEL_BASE_PATH = Path("models")
+
+
+class ModelsConfig(Enum):
+    S26_OPENVINO_640 = ModelConfig(
+        size=640, name="S26_OPENVINO_640", path=MODEL_BASE_PATH / "best_openvino_model_640_s")
+    S26_OPENVINO_800 = ModelConfig(
+        size=800, name="S26_OPENVINO_800", path=MODEL_BASE_PATH / "best_openvino_model_800_s")
+    N26_OPENVINO_800 = ModelConfig(
+        size=800, name="N26_OPENVINO_800", path=MODEL_BASE_PATH / "best_openvino_model_800_n")
+    N26_OPENVINO_640 = ModelConfig(
+        size=640, name="N26_OPENVINO_640", path=MODEL_BASE_PATH / "best_openvino_model_640_n")
+
+
+MODELS_LIST = [m.value.name for m in ModelsConfig]
+
+current_config = {
+    "model_name": ModelsConfig.S26_OPENVINO_800.value.name,
+    "task": "track",
+    "conf": 0.4
+}
+
+model_config = ModelsConfig[current_config['model_name']].value
+model = YOLO(model_config.path, task='segment')
+
+TURN_USERNAME = os.environ.get("TURN_USERNAME", "fallback_user")
+TURN_CREDENTIAL = os.environ.get("TURN_CREDENTIAL", "fallback_pass")
+
+ice_servers = [
     RTCIceServer(urls=["stun:stun.relay.metered.ca:80"]),
     RTCIceServer(
-        urls=[
-            "turn:global.relay.metered.ca:80",
-            "turn:global.relay.metered.ca:443",
-            "turn:global.relay.metered.ca:80?transport=tcp",
-            "turns:global.relay.metered.ca:443?transport=tcp"
-        ],
+        urls=["turn:global.relay.metered.ca:80",
+              "turn:global.relay.metered.ca:443"],
+        username=TURN_USERNAME,
+        credential=TURN_CREDENTIAL
+    ),
+    RTCIceServer(
+        urls=["turn:global.relay.metered.ca:80?transport=tcp",
+              "turn:global.relay.metered.ca:443?transport=tcp"],
         username=TURN_USERNAME,
         credential=TURN_CREDENTIAL
     )
 ]
-RTC_CONFIG = RTCConfiguration(iceServers=ICE_SERVERS)
 
-# Глобальні налаштування для керування з клієнта
-current_config = {
-    "model_name": "S26_OPENVINO_640",
-    "conf": 0.4,
-    "task": "track"
-}
+rtc_config = RTCConfiguration(iceServers=ice_servers)
+
+app = FastAPI()
+relay = MediaRelay()
 
 
 class VideoTransformTrack(VideoStreamTrack):
@@ -60,60 +77,143 @@ class VideoTransformTrack(VideoStreamTrack):
         super().__init__()
         self.track = track
         self.pc = pc
-        self.data_channel = None
-        self.is_processing = False  # Прапорець, щоб не забивати чергу
+        self.is_processing = False
 
     async def recv(self):
         frame = await self.track.recv()
-
-        # Якщо AI вже зайнятий або Data Channel не готовий - просто пропускаємо кадр на вихід
-        if self.is_processing or not self.data_channel or self.data_channel.readyState != "open":
+        if self.is_processing:
             return frame
 
-        # Починаємо обробку
         self.is_processing = True
         img = frame.to_ndarray(format="bgr24")
-
-        # Запускаємо важкі обчислення в окремому потоці, щоб не блокувати Event Loop
-        asyncio.get_event_loop().run_in_executor(None, self.process_ai, img)
-
+        asyncio.create_task(self.process_frame(img))
         return frame
 
-    def process_ai(self, img):
-        try:
-            # Отримуємо результати (зменшуємо imgsz для швидкості на HF)
-            results = model.track(
+    def get_results(self, img):
+        global model, model_config
+
+        if current_config["task"] == "track":
+            return model.track(
                 img,
-                persist=True,
+                task="segment",
+                imgsz=model_config.size,
+                verbose=False,
                 conf=current_config["conf"],
-                imgsz=320,
-                verbose=False
+                iou=0.5,
+                persist=True,
+                tracker="botsort.yaml",
+                half=True
             )[0]
 
-            predictions = []
-            if results.boxes:
-                for i, box in enumerate(results.boxes):
-                    coords = box.xyxy[0].tolist()
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-                    obj_id = int(box.id[0]) if box.id is not None else i
+        return model.predict(
+            img,
+            task="segment",
+            imgsz=model_config.size,
+            verbose=False,
+            conf=current_config["conf"],
+            iou=0.5,
+            half=True
+        )[0]
 
-                    predictions.append({
-                        "id": obj_id,
-                        "bbox": coords,
-                        "class": results.names[cls_id],
-                        "conf": conf
-                    })
+    async def process_frame(self, img):
+        try:
+            h, w = img.shape[:2]
+            loop = asyncio.get_event_loop()
 
-            # Відправляємо результати назад клієнту через Data Channel
-            if self.data_channel and self.data_channel.readyState == "open":
-                payload = json.dumps({"data": predictions})
-                self.data_channel.send(payload)
+            results = await loop.run_in_executor(
+                None,
+                lambda: self.get_results(img)
+            )
 
+            channel = getattr(self.pc, "active_channel", None)
+            if channel and channel.readyState == "open":
+                predictions = []
+                if results.boxes:
+                    for i, box in enumerate(results.boxes):
+                        if current_config["task"] == "predict":
+                            t_id = -1
+                        else:
+                            t_id = int(box.id[0]) if box.id is not None else -1
+
+                        coords = box.xyxy[0].tolist()
+
+                        norm_box = [
+                            coords[0] / w, coords[1] / h,
+                            coords[2] / w, coords[3] / h
+                        ]
+
+                        norm_mask = []
+                        if results.masks:
+                            norm_mask = [
+                                [p[0]/w, p[1]/h]
+                                for p in results.masks.xy[i]]
+
+                        predictions.append({
+                            "box": norm_box,
+                            "mask": norm_mask,
+                            "label": results.names[int(box.cls[0])],
+                            "id": t_id,
+                            "conf": round(float(box.conf[0]), 2)
+                        })
+
+                payload = {
+                    "data": predictions,
+                    "metrics": {
+                        "pre": round(results.speed['preprocess'], 1),
+                        "inf": round(results.speed['inference'], 1),
+                        "post": round(results.speed['postprocess'], 1),
+                        "total": round(sum(results.speed.values()), 1)
+                    }
+                }
+                channel.send(json.dumps(payload))
         except Exception as e:
-            print(f"AI Error: {e}")
+            print(f"Error in process_frame: {e}")
         finally:
             self.is_processing = False
+
+
+async def async_reload_model(target_model_name):
+    global model, model_config
+    try:
+        loop = asyncio.get_event_loop()
+        new_config = ModelsConfig[target_model_name].value
+
+        new_model = await loop.run_in_executor(
+            None,
+            lambda: YOLO(new_config.path, task='segment')
+        )
+
+        model_config = new_config
+        model = new_model
+        print(f"Model reloaded successfully: {target_model_name}")
+    except Exception as e:
+        print(f"Failed to reload model: {e}")
+
+
+@app.get("/ice-config")
+async def get_ice_config():
+    return {
+        "iceServers": [
+            RTCIceServer(urls=["stun:stun.relay.metered.ca:80"]),
+            RTCIceServer(
+                urls=["turn:global.relay.metered.ca:80",
+                      "turn:global.relay.metered.ca:443"],
+                username=TURN_USERNAME,
+                credential=TURN_CREDENTIAL
+            ),
+            RTCIceServer(
+                urls=["turn:global.relay.metered.ca:80?transport=tcp",
+                      "turn:global.relay.metered.ca:443?transport=tcp"],
+                username=TURN_USERNAME,
+                credential=TURN_CREDENTIAL
+            )
+        ]
+    }
+
+
+@app.get("/models")
+async def list_models():
+    return {"models": MODELS_LIST}
 
 
 @app.post("/offer")
@@ -121,76 +221,57 @@ async def offer(request: Request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    pc = RTCPeerConnection(configuration=RTC_CONFIG)
+    pc = RTCPeerConnection(configuration=rtc_config)
+    pc.active_channel = None
 
     @pc.on("datachannel")
     def on_datachannel(channel):
-        print("✅ Data channel opened!")
+        pc.active_channel = channel
+        print("Data channel opened!")
 
         @channel.on("message")
         def on_message(message):
-            global current_config
             try:
-                msg_data = json.loads(message)
-                current_config.update(msg_data)
-                print(f"⚙️ Config updated: {current_config}")
-            except:
-                pass
+                data = json.loads(message)
+                if data.get("type") == "config":
+                    updated_model = data.get(
+                        "model", current_config["model_name"])
+
+                    if updated_model != current_config["model_name"]:
+                        current_config["model_name"] = updated_model
+                        loop = asyncio.get_event_loop()
+                        loop.create_task(async_reload_model(updated_model))
+
+                    current_config["task"] = data.get(
+                        "task", current_config["task"])
+
+                    current_config["conf"] = float(
+                        data.get("conf", current_config["conf"]))
+
+                    print(f"Updated config from client: {current_config}")
+
+                if data.get("type") == "ping":
+                    channel.send(json.dumps(
+                        {"type": "pong", "timestamp": data.get("timestamp")}))
+            except Exception as e:
+                print(f"Error parsing client message: {e}")
 
     @pc.on("track")
     def on_track(track):
         if track.kind == "video":
-            print("🎥 Video track received!")
-            local_video = VideoTransformTrack(track, pc)
+            local_video = VideoTransformTrack(relay.subscribe(track), pc)
             pc.addTrack(local_video)
-
-            # Прив'язуємо канал до треку для відправки результатів
-            @pc.on("datachannel")
-            def set_dc(channel):
-                local_video.data_channel = channel
-
-    @pc.on("iceconnectionstatechange")
-    async def on_iceconnectionstatechange():
-        print(f"❄️ ICE Connection State: {pc.iceConnectionState}")
-        if pc.iceConnectionState == "failed":
-            await pc.close()
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-
-    return JSONResponse({
-        "sdp": pc.localDescription.sdp,
-        "type": pc.localDescription.type
-    })
-
-
-@app.get("/ice-config")
-async def get_ice_config():
-    # Повертаємо ту саму структуру, що хоче клієнт
-    return {
-        "iceServers": [
-            {"urls": "stun:stun.relay.metered.ca:80"},
-            {
-                "urls": [
-                    "turn:global.relay.metered.ca:80",
-                    "turn:global.relay.metered.ca:443",
-                    "turn:global.relay.metered.ca:80?transport=tcp",
-                    "turns:global.relay.metered.ca:443?transport=tcp"
-                ],
-                "username": TURN_USERNAME,
-                "credential": TURN_CREDENTIAL
-            }
-        ]
-    }
+    return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 
 @app.get("/")
 async def index():
-    with open("client/index.html", "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+    return FileResponse('client/index.html')
 
 if __name__ == "__main__":
     import uvicorn
-    # Порт 7860 обов'язковий для Hugging Face
-    uvicorn.run(app, host="0.0.0.0", port=7860, loop="asyncio")
+    uvicorn.run(app, host="0.0.0.0", port=7860)
