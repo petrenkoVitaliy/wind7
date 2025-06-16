@@ -3,12 +3,13 @@ import json
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCConfiguration, RTCIceServer
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
 from aiortc.contrib.media import MediaRelay
 from ultralytics import YOLO
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
+from twilio.rest import Client
 
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -47,26 +48,24 @@ current_config = {
 model_config = ModelsConfig[current_config['model_name']].value
 model = YOLO(model_config.path, task='segment')
 
-TURN_USERNAME = os.environ.get("TURN_USERNAME", "fallback_user")
-TURN_CREDENTIAL = os.environ.get("TURN_CREDENTIAL", "fallback_pass")
+TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 
-ice_servers = [
-    RTCIceServer(urls=["stun:stun.relay.metered.ca:80"]),
-    RTCIceServer(
-        urls=["turn:global.relay.metered.ca:80",
-              "turn:global.relay.metered.ca:443"],
-        username=TURN_USERNAME,
-        credential=TURN_CREDENTIAL
-    ),
-    RTCIceServer(
-        urls=["turn:global.relay.metered.ca:80?transport=tcp",
-              "turn:global.relay.metered.ca:443?transport=tcp"],
-        username=TURN_USERNAME,
-        credential=TURN_CREDENTIAL
-    )
-]
+rtc_config = None
 
-rtc_config = RTCConfiguration(iceServers=ice_servers)
+
+if TWILIO_SID and TWILIO_TOKEN:
+    client = Client(TWILIO_SID, TWILIO_TOKEN)
+
+    token = client.tokens.create()
+
+    rtc_config = {
+        "iceServers": token.ice_servers,
+        "iceTransportPolicy": "relay",
+    }
+else:
+    rtc_config = None
+
 
 app = FastAPI()
 relay = MediaRelay()
@@ -192,23 +191,16 @@ async def async_reload_model(target_model_name):
 
 @app.get("/ice-config")
 async def get_ice_config():
-    return {
-        "iceServers": [
-            RTCIceServer(urls=["stun:stun.relay.metered.ca:80"]),
-            RTCIceServer(
-                urls=["turn:global.relay.metered.ca:80",
-                      "turn:global.relay.metered.ca:443"],
-                username=TURN_USERNAME,
-                credential=TURN_CREDENTIAL
-            ),
-            RTCIceServer(
-                urls=["turn:global.relay.metered.ca:80?transport=tcp",
-                      "turn:global.relay.metered.ca:443?transport=tcp"],
-                username=TURN_USERNAME,
-                credential=TURN_CREDENTIAL
-            )
-        ]
-    }
+    try:
+        client = Client(TWILIO_SID, TWILIO_TOKEN)
+        token = client.tokens.create()
+
+        return {
+            "iceServers": token.ice_servers,
+        }
+    except Exception as e:
+        print(f"Twilio Error: {e}")
+        return {"iceServers": [{"urls": "stun:stun.l.google.com:19302"}]}
 
 
 @app.get("/models")
