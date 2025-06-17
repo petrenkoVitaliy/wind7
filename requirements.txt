@@ -4,3 +4,4 @@ aiortc
 ultralytics
 openvino
 numpy
+twilio
