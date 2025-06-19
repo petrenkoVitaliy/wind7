@@ -3,7 +3,7 @@ import json
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
-from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc import RTCIceServer, RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCConfiguration
 from aiortc.contrib.media import MediaRelay
 from ultralytics import YOLO
 from enum import Enum
@@ -55,16 +55,27 @@ rtc_config = None
 
 
 if TWILIO_SID and TWILIO_TOKEN:
-    client = Client(TWILIO_SID, TWILIO_TOKEN)
+    try:
+        client = Client(TWILIO_SID, TWILIO_TOKEN)
+        token = client.tokens.create()
 
-    token = client.tokens.create()
+        ice_servers = []
+        for s in token.ice_servers:
+            ice_servers.append(RTCIceServer(
+                urls=s['urls'],
+                username=s.get('username'),
+                credential=s.get('credential')
+            ))
 
-    rtc_config = {
-        "iceServers": token.ice_servers,
-        "iceTransportPolicy": "relay",
-    }
+        rtc_config = RTCConfiguration(iceServers=ice_servers)
+        print("Twilio RTC Config created")
+    except Exception as e:
+        print(f"Error initializing Twilio: {e}")
+        rtc_config = RTCConfiguration(
+            iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])])
 else:
-    rtc_config = None
+    rtc_config = RTCConfiguration(
+        iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])])
 
 
 app = FastAPI()
