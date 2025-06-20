@@ -268,6 +268,7 @@ async def offer(request: Request):
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
+    await asyncio.sleep(1)
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 

@@ -295,6 +295,24 @@
                     const offer = await this.pc.createOffer();
                     await this.pc.setLocalDescription(offer);
 
+                    await new Promise((resolve) => {
+                        if (this.pc.iceGatheringState === 'complete') {
+                            resolve();
+                        } else {
+                            const checkState = () => {
+                                if (this.pc.iceGatheringState === 'complete') {
+                                    this.pc.removeEventListener('icegatheringstatechange', checkState);
+                                    resolve();
+                                }
+                            };
+                            this.pc.addEventListener('icegatheringstatechange', checkState);
+
+                            setTimeout(() => {
+                                this.pc.removeEventListener('icegatheringstatechange', checkState);
+                                resolve();
+                            }, 2000);
+                        }
+                    });
                     fetch('/offer', {
                         method: 'POST',
                         body: JSON.stringify({ sdp: this.pc.localDescription.sdp, type: this.pc.localDescription.type }),
