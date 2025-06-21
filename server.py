@@ -51,32 +51,10 @@ model = YOLO(model_config.path, task='segment')
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 
-rtc_config = None
-
-
-if TWILIO_SID and TWILIO_TOKEN:
-    try:
-        client = Client(TWILIO_SID, TWILIO_TOKEN)
-        token = client.tokens.create()
-
-        ice_servers = []
-        for s in token.ice_servers:
-            ice_servers.append(RTCIceServer(
-                urls=s['urls'],
-                username=s.get('username'),
-                credential=s.get('credential')
-            ))
-
-        rtc_config = RTCConfiguration(iceServers=ice_servers)
-        print("Twilio RTC Config created")
-    except Exception as e:
-        print(f"Error initializing Twilio: {e}")
-        rtc_config = RTCConfiguration(
-            iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])])
-else:
-    rtc_config = RTCConfiguration(
-        iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])])
-
+rtc_config = RTCConfiguration(
+    iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
+)
+print("Server RTC Config created (STUN only)")
 
 app = FastAPI()
 relay = MediaRelay()
