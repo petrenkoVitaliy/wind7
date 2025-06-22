@@ -256,6 +256,10 @@
                         console.log("ICE Error:", e.url, e.errorCode, e.errorText);
                     };
 
+                    this.pc.ontrack = (event) => {
+                        console.log("received track:", event);
+                    };
+
                     this.dc.onmessage = (evt) => {
                         const payload = JSON.parse(evt.data);
 

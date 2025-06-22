@@ -66,9 +66,11 @@ class VideoTransformTrack(VideoStreamTrack):
         self.track = track
         self.pc = pc
         self.is_processing = False
+        print("VideoTransformTrack initialized")
 
     async def recv(self):
         frame = await self.track.recv()
+        print(f"Frame received: {frame.width}x{frame.height}")
         if self.is_processing:
             return frame
 
@@ -212,6 +214,7 @@ async def offer(request: Request):
 
         @channel.on("message")
         def on_message(message):
+            print(f"Message from client: {message}")
             try:
                 data = json.loads(message)
                 if data.get("type") == "config":
@@ -239,6 +242,7 @@ async def offer(request: Request):
 
     @pc.on("track")
     def on_track(track):
+        print(f"Track received: {track.kind}")
         if track.kind == "video":
             local_video = VideoTransformTrack(relay.subscribe(track), pc)
             pc.addTrack(local_video)
