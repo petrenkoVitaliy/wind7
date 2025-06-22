@@ -245,7 +245,15 @@ async def offer(request: Request):
         print(f"Track received: {track.kind}")
         if track.kind == "video":
             local_video = VideoTransformTrack(relay.subscribe(track), pc)
-            pc.addTrack(local_video)
+
+            async def force_consume():
+                try:
+                    while True:
+                        await local_video.recv()
+                except Exception as e:
+                    print(f"Consumption stopped: {e}")
+
+                asyncio.create_task(force_consume())
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()

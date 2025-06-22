@@ -245,6 +245,11 @@
                     const config = await response.json();
 
                     this.pc = new RTCPeerConnection(config);
+
+                    stream.getTracks().forEach(track => {
+                        this.pc.addTrack(track, stream);
+                    });
+
                     this.dc = this.pc.createDataChannel("results");
                     this.dc.onopen = () => this.sendConfig();
 
