@@ -70,7 +70,6 @@ class VideoTransformTrack(VideoStreamTrack):
 
     async def recv(self):
         frame = await self.track.recv()
-        print(f"Frame received: {frame.width}x{frame.height}")
         if self.is_processing:
             return frame
 
@@ -253,7 +252,7 @@ async def offer(request: Request):
                 except Exception as e:
                     print(f"Consumption stopped: {e}")
 
-                asyncio.create_task(force_consume())
+            asyncio.create_task(force_consume())
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
