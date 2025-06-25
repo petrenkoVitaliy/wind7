@@ -127,31 +127,31 @@ class VideoTransformTrack(VideoStreamTrack):
                         coords = box.xyxy[0].tolist()
 
                         norm_box = [
-                            coords[0] / w, coords[1] / h,
-                            coords[2] / w, coords[3] / h
+                            float(coords[0] / w), float(coords[1] / h),
+                            float(coords[2] / w), float(coords[3] / h)
                         ]
 
                         norm_mask = []
                         if results.masks:
                             norm_mask = [
-                                [p[0]/w, p[1]/h]
+                                [float(p[0]/w), float(p[1]/h)]
                                 for p in results.masks.xy[i]]
 
                         predictions.append({
                             "box": norm_box,
                             "mask": norm_mask,
-                            "label": results.names[int(box.cls[0])],
-                            "id": t_id,
+                            "label": str(results.names[int(box.cls[0])]),
+                            "id": int(t_id),
                             "conf": round(float(box.conf[0]), 2)
                         })
 
                 payload = {
                     "data": predictions,
                     "metrics": {
-                        "pre": round(results.speed['preprocess'], 1),
-                        "inf": round(results.speed['inference'], 1),
-                        "post": round(results.speed['postprocess'], 1),
-                        "total": round(sum(results.speed.values()), 1)
+                        "pre": round(float(results.speed['preprocess']), 1),
+                        "inf": round(float(results.speed['inference']), 1),
+                        "post": round(float(results.speed['postprocess']), 1),
+                        "total": round(float(sum(results.speed.values())), 1)
                     }
                 }
                 channel.send(json.dumps(payload))
