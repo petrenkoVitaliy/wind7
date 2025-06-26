@@ -133,9 +133,7 @@ class VideoTransformTrack(VideoStreamTrack):
 
                         norm_mask = []
                         if results.masks:
-                            norm_mask = [
-                                [float(p[0]/w), float(p[1]/h)]
-                                for p in results.masks.xy[i]]
+                            norm_mask = results.masks.xyn[i].tolist()
 
                         predictions.append({
                             "box": norm_box,
@@ -257,7 +255,6 @@ async def offer(request: Request):
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-    await asyncio.sleep(1)
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
 
 

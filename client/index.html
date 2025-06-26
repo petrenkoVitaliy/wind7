@@ -46,6 +46,13 @@
             style="position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px;"></video>
         <canvas id="canvas" x-ref="canvas"></canvas>
 
+        <div x-show="loading" x-transition.opacity
+            class="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
+            <div class="w-16 h-16 border-4 border-green-500/20 border-t-green-500 rounded-full animate-spin mb-4"></div>
+            <div class="text-green-400 font-mono text-sm tracking-widest animate-pulse">ESTABLISHING AI LINK...</div>
+            <div class="text-[10px] text-white/40 mt-2" x-text="'ICE: ' + iceState"></div>
+        </div>
+
         <div class="absolute top-6 left-0 right-0 px-6 flex justify-between items-center z-50">
             <div class="glass px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
                 <div class="w-2 h-2 rounded-full" :class="connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'">
@@ -54,6 +61,13 @@
             </div>
 
             <div class="flex gap-2">
+                <button @click="showLogs = !showLogs" class="glass p-2 rounded-full hover:bg-white/20 transition"
+                    :class="showLogs ? 'text-blue-400' : 'text-white'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </button>
                 <button @click="showMetrics = !showMetrics" class="glass p-2 rounded-full hover:bg-white/20 transition"
                     :class="showMetrics ? 'text-green-400' : 'text-white'">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,6 +94,28 @@
                 <div>Inf: <span class="text-white font-bold" x-text="metrics.inf"></span>ms</div>
                 <div>Post: <span class="text-gray-300" x-text="metrics.post"></span>ms</div>
                 <div>Total: <span class="text-yellow-400" x-text="metrics.total"></span>ms</div>
+            </div>
+        </div>
+
+        <div x-show="showLogs" x-transition class="absolute top-20 right-6 left-6 bottom-48 z-40 pointer-events-none">
+            <div class="glass w-full h-full rounded-2xl overflow-hidden flex flex-col pointer-events-auto">
+                <div class="px-4 py-2 border-b border-white/10 flex justify-between items-center bg-white/5">
+                    <span class="text-[10px] font-bold tracking-widest opacity-50">SYSTEM LOGS</span>
+                    <button @click="logs = []" class="text-[10px] text-red-400 hover:text-red-300">CLEAR</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 font-mono text-[9px] space-y-1">
+                    <template x-for="(log, i) in logs" :key="i">
+                        <div class="flex gap-2">
+                            <span class="opacity-30" x-text="log.time"></span>
+                            <span :class="{
+                                'text-white': log.type === 'log',
+                                'text-red-400': log.type === 'error',
+                                'text-yellow-400': log.type === 'warn',
+                                'text-blue-400': log.type === 'info'
+                            }" x-text="log.msg"></span>
+                        </div>
+                    </template>
+                </div>
             </div>
         </div>
 
@@ -148,14 +184,18 @@
         document.addEventListener('alpine:init', () => {
             Alpine.data('visionApp', () => ({
                 connected: false,
+                loading: false,
+                iceState: 'new',
                 mode: 'stained',
                 showMetrics: true,
+                showLogs: false,
                 syncMode: false,
 
                 config: { model: '', task: 'track', conf: 0.4 },
                 metrics: { pre: 0, inf: 0, post: 0, total: 0 },
                 clientFps: 0, serverFps: 0, latency: 0,
                 models: [],
+                logs: [],
 
                 qualityName: 'High Accuracy',
                 currentQuality: { name: 'High Accuracy', w: 1280, h: 720, res: '720p' },
@@ -174,6 +214,8 @@
                 captureFrameId: null,
 
                 async init() {
+                    this.hookConsole();
+                    console.log("App initializing...");
                     try {
                         const res = await fetch('/models');
                         const data = await res.json();
@@ -182,6 +224,20 @@
                     } catch (e) { console.error("Models fetch failed"); }
 
                     setInterval(() => this.measureLatency(), 1000);
+                },
+
+                hookConsole() {
+                    const types = ['log', 'error', 'warn', 'info'];
+                    types.forEach(type => {
+                        const original = console[type];
+                        console[type] = (...args) => {
+                            const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+                            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                            this.logs.unshift({ type, msg, time });
+                            if (this.logs.length > 100) this.logs.pop();
+                            original.apply(console, args);
+                        };
+                    });
                 },
 
                 measureLatency() {
@@ -196,6 +252,7 @@
                         const stream = await navigator.mediaDevices.getUserMedia(constraints);
                         this.$refs.video.srcObject = stream;
                         this.connected = true;
+                        this.loading = true;
 
                         this.$refs.video.onloadedmetadata = () => {
                             this.$refs.canvas.width = this.$refs.video.videoWidth;
@@ -203,7 +260,10 @@
                             this.startCaptureLoop();
                         };
                         await this.setupWebRTC(stream);
-                    } catch (err) { alert("Camera error: " + err); }
+                    } catch (err) {
+                        console.error("Camera error:", err);
+                        alert("Camera error: " + err);
+                    }
                 },
 
                 stop() {
@@ -241,6 +301,7 @@
                 },
 
                 async setupWebRTC(stream) {
+                    console.log("Setting up WebRTC...");
                     const response = await fetch('/ice-config');
                     const config = await response.json();
 
@@ -251,18 +312,25 @@
                     });
 
                     this.dc = this.pc.createDataChannel("results");
-                    this.dc.onopen = () => this.sendConfig();
+                    this.dc.onopen = () => {
+                        console.log("DataChannel opened");
+                        this.sendConfig();
+                    };
 
                     this.pc.oniceconnectionstatechange = () => {
+                        this.iceState = this.pc.iceConnectionState;
                         console.log("ICE Connection State:", this.pc.iceConnectionState);
+                        if (this.pc.iceConnectionState === 'failed' || this.pc.iceConnectionState === 'closed') {
+                            this.loading = false;
+                        }
                     };
 
                     this.pc.onicecandidateerror = (e) => {
-                        console.log("ICE Error:", e.url, e.errorCode, e.errorText);
+                        console.error("ICE Error:", e.errorCode, e.errorText);
                     };
 
                     this.pc.ontrack = (event) => {
-                        console.log("received track:", event);
+                        console.log("received track:", event.track.kind);
                     };
 
                     this.dc.onmessage = (evt) => {
@@ -273,6 +341,10 @@
                             return;
                         }
                         if (payload.metrics) {
+                            if (this.loading) {
+                                console.log("First AI results received!");
+                                this.loading = false;
+                            }
                             this.currentPredictions = payload.data;
                             this.metrics = payload.metrics;
 
@@ -317,18 +389,28 @@
                             this.pc.addEventListener('icegatheringstatechange', checkState);
 
                             setTimeout(() => {
+                                console.warn("ICE Gathering timed out, sending partial offer");
                                 this.pc.removeEventListener('icegatheringstatechange', checkState);
                                 resolve();
-                            }, 2000);
+                            }, 1500);
                         }
                     });
+
+                    console.log("Sending offer to server...");
                     fetch('/offer', {
                         method: 'POST',
                         body: JSON.stringify({ sdp: this.pc.localDescription.sdp, type: this.pc.localDescription.type }),
                         headers: { 'Content-Type': 'application/json' }
                     })
                         .then(res => res.json())
-                        .then(answer => this.pc.setRemoteDescription(answer));
+                        .then(answer => {
+                            console.log("Received answer from server");
+                            return this.pc.setRemoteDescription(answer);
+                        })
+                        .catch(e => {
+                            console.error("Offer failed:", e);
+                            this.loading = false;
+                        });
                 },
 
                 async startCaptureLoop() {
