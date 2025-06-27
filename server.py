@@ -12,8 +12,8 @@ from pathlib import Path
 from twilio.rest import Client
 
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
-os.environ["OMP_NUM_THREADS"] = "2"
-os.environ["MKL_NUM_THREADS"] = "2"
+# os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["MKL_NUM_THREADS"] = "1"
 
 
 @dataclass(frozen=True)
