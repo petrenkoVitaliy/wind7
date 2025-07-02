@@ -142,12 +142,6 @@
                             <option :value="q.name" x-text="q.name + ' (' + q.res + ')'"></option>
                         </template>
                     </select>
-
-                    <select x-model="mode"
-                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold">
-                        <option value="boxes">Show: Boxes</option>
-                        <option value="stained">Show: Masks</option>
-                    </select>
                 </div>
 
                 <div class="flex items-center gap-3 text-xs px-1">
@@ -169,6 +163,20 @@
                             :class="syncMode ? 'left-7' : 'left-1'"></div>
                     </button>
                 </div>
+                <div class="flex justify-between items-center bg-black/40 px-4 py-3 rounded-xl border border-white/5">
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold" :class="isMasks ? 'text-green-400' : 'text-white'">Show
+                            Masks</span>
+                        <span class="text-[9px] opacity-60">Visualise Mode: Mask/Box</span>
+                    </div>
+                    <button @click="toggleMasks()" class="w-12 h-6 rounded-full relative transition-colors duration-300"
+                        :class="isMasks ? 'bg-green-500' : 'bg-gray-600'">
+                        <div class="absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300"
+                            :class="isMasks ? 'left-7' : 'left-1'"></div>
+                    </button>
+                </div>
+
+
 
                 <button @click="connected ? stop() : start()"
                     class="w-full py-3.5 rounded-xl font-bold tracking-wide shadow-lg active:scale-[0.98] transition-all"
@@ -186,7 +194,8 @@
                 connected: false,
                 loading: false,
                 iceState: 'new',
-                mode: 'stained',
+
+                isMasks: true,
                 showMetrics: true,
                 showLogs: false,
                 syncMode: false,
@@ -205,7 +214,8 @@
                     { name: 'Performance', w: 320, h: 240, res: '240p' },
                 ],
 
-                pc: null, dc: null,
+                pc: null,
+                dc: null,
                 currentPredictions: [],
                 lastFrameTime: performance.now(),
                 lastServerTime: performance.now(),
@@ -294,6 +304,10 @@
                             type: 'config', model: this.config.model, task: this.config.task, conf: parseFloat(this.config.conf)
                         }));
                     }
+                },
+
+                toggleMasks() {
+                    this.isMasks = !this.isMasks;
                 },
 
                 toggleSync() {
@@ -454,17 +468,38 @@
 
                     this.currentPredictions.forEach(pred => {
                         const hasId = pred.id !== undefined && pred.id !== -1;
-                        const color = hasId ? `hsl(${(pred.id * 60) % 360}, 100%, 50%)` : '#00ff00';
-                        const w = canvas.width; const h = canvas.height;
+
+                        const GOLDEN_RATIO_CONJUGATE = 0.618033988749895;
+
+                        const hue = (pred.id * GOLDEN_RATIO_CONJUGATE * 360) % 360;
+
+                        const color = hasId ? `hsl(${hue}, 100%, 50%)` : '#00ff00';
+
+                        const w = canvas.width;
+                        const h = canvas.height;
                         const [x1, y1, x2, y2] = [pred.box[0] * w, pred.box[1] * h, pred.box[2] * w, pred.box[3] * h];
 
-                        if (this.mode === 'boxes') {
+                        const label1 = `${hasId ? 'id:' + pred.id : ''}`;
+                        const label2 = `c:${pred.conf}`;
+
+                        const drawHighContrastText = (text, x, y) => {
+                            if (!text) return;
+
+                            ctx.strokeStyle = 'white';
+                            ctx.lineWidth = 3;
+                            ctx.lineJoin = 'round';
+                            ctx.strokeText(text, x, y);
+
+                            ctx.fillStyle = 'black';
+                            ctx.fillText(text, x, y);
+                        };
+
+
+                        if (!this.isMasks) {
                             ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-                            ctx.fillStyle = color; ctx.font = 'bold 14px monospace';
-                            const label = `${pred.label} ${hasId ? 'ID:' + pred.id : ''} ${pred.conf}`;
-                            ctx.fillText(label, x1, y1 - 8);
-                        } else if (this.mode === 'stained' && pred.mask && pred.mask.length > 0) {
-                            ctx.save(); ctx.beginPath();
+                        } else if (this.isMasks && pred.mask && pred.mask.length > 0) {
+                            ctx.save();
+                            ctx.beginPath();
                             const pts = pred.mask.map(p => [p[0] * w, p[1] * h]);
                             ctx.moveTo(pts[0][0], pts[0][1]);
                             pts.forEach(p => ctx.lineTo(p[0], p[1]));
@@ -479,7 +514,11 @@
                             ctx.lineWidth = 2;
                             ctx.stroke();
                             ctx.restore();
+
                         }
+
+                        drawHighContrastText(label1, x1, y1 - 20);
+                        drawHighContrastText(label2, x1, y1 - 5);
                     });
                 }
             }));

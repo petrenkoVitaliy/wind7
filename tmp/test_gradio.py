@@ -54,7 +54,7 @@ def predict_video(frame, conf, quality):
 
 
 with gr.Blocks(head=js_and_css, css="#input_container { margin-bottom: 20px; }") as demo:
-    gr.Markdown("## AI Vision Pro ")
+    gr.Markdown("## AI Vision ")
 
     with gr.Row():
         with gr.Column(scale=1):
