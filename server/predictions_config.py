@@ -6,3 +6,4 @@ class PredictionsConfig:
     model_name: str
     task: str
     conf: float
+    retina_masks: bool

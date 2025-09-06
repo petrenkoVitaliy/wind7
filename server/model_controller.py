@@ -1,4 +1,5 @@
 from server.model_configs import ModelConfig, ModelType, ModelsConfig
+from server.model_handler.onnx_model_handler import OnnxModelHandler
 from server.predictions_config import PredictionsConfig
 from server.model_handler.yolo_model_handler import YoloModelHandler
 from server.utils import tprint
@@ -24,7 +25,12 @@ class ModelController:
 
         if self.model_type == ModelType.YOLO:
             self.model_handler = YoloModelHandler(
-                predictions_config, model_options)
+                predictions_config, model_options
+            )
+        elif self.model_type == ModelType.ONNX:
+            self.model_handler = OnnxModelHandler(
+                predictions_config, model_options
+            )
         else:
             raise ValueError(
                 f"ERROR: Unsupported model type: {self.model_type}"

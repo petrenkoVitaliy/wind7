@@ -1,0 +1,17 @@
+name: main_01
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - fastapi
+      - uvicorn[standard]
+      - aiortc
+      - twilio
+      - ultralytics
+      - opencv-python
+      - numpy
+      - onnxruntime
+      - onnxruntime-openvino

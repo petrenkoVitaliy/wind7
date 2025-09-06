@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import concurrent
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from aiortc import RTCIceServer, RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, RTCConfiguration
@@ -13,8 +14,9 @@ from server.model_configs import ModelsConfig
 from server.utils import tprint
 
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
-# os.environ["OMP_NUM_THREADS"] = "1"
-# os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 DEV_ENV = os.environ.get("DEV_ENV", "false").lower() == "true"
 if DEV_ENV:
@@ -46,69 +48,80 @@ class VideoTransformTrack(VideoStreamTrack):
         self.predictions_config = PredictionsConfig(
             model_name=ModelsConfig.S26_OPENVINO_800.value.name,
             task="track",
-            conf=0.4
+            conf=0.4,
+            retina_masks=False
         )
 
         self.model_controller = ModelController(self.predictions_config)
 
-        tprint("INIT: VideoTransformTrack initialized")
-
-    async def update_predictions_config(self, data: any):
-        updated_predictions_config = PredictionsConfig(
-            model_name=data.get(
-                "model", video_track.predictions_config.model_name
-            ),
-            task=data.get(
-                "task", video_track.predictions_config.task
-            ),
-            conf=float(
-                data.get(
-                    "conf", video_track.predictions_config.conf)
-            )
+        self.inference_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1
         )
 
-        if updated_predictions_config != self.predictions_config:
-            self.predictions_config = updated_predictions_config
+        tprint("INIT: VideoTransformTrack initialized")
 
-            await self.model_controller.reload_model(self.predictions_config)
-
-            tprint(f"RELOAD: Received new config: {self.predictions_config}")
-        else:
-            tprint("RELOAD: Received same config, no reload needed.")
-
-    async def recv(self):
-        frame = await self.track.recv()
-
+    async def process_frame(self, frame):
         if self.is_processing:
-            return frame
+            return
 
         self.is_processing = True
-
-        img = frame.to_ndarray(format="bgr24")
-        asyncio.create_task(self.process_frame(img))
-
-        return frame
-
-    async def process_frame(self, img):
         try:
-            loop = asyncio.get_event_loop()
-
             channel = getattr(self.pc, "active_channel", None)
 
             if channel and channel.readyState == "open":
-                results = await loop.run_in_executor(
-                    None,
-                    lambda: self.model_controller.get_predictions(img)
-                )
+                loop = asyncio.get_running_loop()
 
+            def _inference_task():
+                img = frame.to_ndarray(format="bgr24")
+                return self.model_controller.get_predictions(img)
+
+            results = await loop.run_in_executor(
+                self.inference_executor,
+                _inference_task
+            )
+
+            if results is not None:
                 channel.send(json.dumps(results))
+
         except Exception as e:
             tprint(f"ERROR: process_frame: {e}")
         finally:
             self.is_processing = False
 
+    async def update_predictions_config(self, data: any):
+        updated_predictions_config = PredictionsConfig(
+            model_name=data.get(
+                "model", self.predictions_config.model_name
+            ),
+            task=data.get(
+                "task", self.predictions_config.task
+            ),
+            conf=float(
+                data.get(
+                    "conf", self.predictions_config.conf)
+            ),
+            retina_masks=data.get(
+                "retina_masks", self.predictions_config.retina_masks)
+        )
 
-video_track = None
+        if updated_predictions_config != self.predictions_config:
+            self.predictions_config = updated_predictions_config
+
+            tprint(f"RELOAD: Config is new: {self.predictions_config}")
+
+            await self.model_controller.reload_model(self.predictions_config)
+        else:
+            tprint("RELOAD: Same config, no reload needed.")
+
+    async def recv(self):
+        frame = await self.track.recv()
+
+        asyncio.create_task(self.process_frame(frame))
+
+        return frame
+
+
+peer_connections = set()
 
 
 @app.get("/ice-config")
@@ -141,6 +154,14 @@ async def offer(request: Request):
 
     pc = RTCPeerConnection(configuration=rtc_config)
     pc.active_channel = None
+    pc.video_track = None
+    peer_connections.add(pc)
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        tprint(f"Connection state is {pc.connectionState}")
+        if pc.connectionState in ["failed", "closed"]:
+            peer_connections.discard(pc)
 
     @pc.on("datachannel")
     def on_datachannel(channel):
@@ -166,31 +187,29 @@ async def offer(request: Request):
                     return
 
                 if data.get("type") == "config":
-                    if not video_track:
+                    if not pc.video_track:
                         tprint("ERROR: No video track available yet.")
 
                         return
 
                     tprint(f"RELOAD: Received config: {data}")
 
-                    await video_track.update_predictions_config(data)
+                    await pc.video_track.update_predictions_config(data)
 
             except Exception as e:
                 tprint(f"ERROR: Error parsing message: {e}")
 
     @pc.on("track")
     def on_track(track):
-        global video_track
-
         tprint(f"INIT: Track received: {track.kind}")
 
         if track.kind == "video":
-            video_track = VideoTransformTrack(relay.subscribe(track), pc)
+            pc.video_track = VideoTransformTrack(relay.subscribe(track), pc)
 
             async def force_consume():
                 try:
                     while True:
-                        await video_track.recv()
+                        await pc.video_track.recv()
 
                 except Exception as e:
                     tprint(f"ERROR: Consumption stopped: {e}")

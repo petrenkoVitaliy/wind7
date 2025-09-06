@@ -92,6 +92,7 @@
                 <div class="w-full h-px bg-white/20 my-0.5"></div>
                 <div>Pre: <span class="text-gray-300" x-text="metrics.pre"></span>ms</div>
                 <div>Inf: <span class="text-white font-bold" x-text="metrics.inf"></span>ms</div>
+                <div>Norm: <span class="text-white font-bold" x-text="metrics.normalize"></span>ms</div>
                 <div>Post: <span class="text-gray-300" x-text="metrics.post"></span>ms</div>
                 <div>Total: <span class="text-yellow-400" x-text="metrics.total"></span>ms</div>
             </div>
@@ -176,6 +177,20 @@
                     </button>
                 </div>
 
+                <div class="flex justify-between items-center bg-black/40 px-4 py-3 rounded-xl border border-white/5">
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold" :class="isRetinaMasks ? 'text-green-400' : 'text-white'">Retina
+                            Masks
+                            <span class="text-[9px] opacity-60">YOLO Retina Masks</span>
+                    </div>
+                    <button @click="toggleRetinaMasks()"
+                        class="w-12 h-6 rounded-full relative transition-colors duration-300"
+                        :class="isRetinaMasks ? 'bg-green-500' : 'bg-gray-600'">
+                        <div class="absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300"
+                            :class="isRetinaMasks ? 'left-7' : 'left-1'"></div>
+                    </button>
+                </div>
+
 
 
                 <button @click="connected ? stop() : start()"
@@ -196,12 +211,13 @@
                 iceState: 'new',
 
                 isMasks: true,
+                isRetinaMasks: true,
                 showMetrics: true,
                 showLogs: false,
                 syncMode: false,
 
                 config: { model: '', task: 'track', conf: 0.4 },
-                metrics: { pre: 0, inf: 0, post: 0, total: 0 },
+                metrics: { pre: 0, inf: 0, post: 0, total: 0, normalize: 0 },
                 clientFps: 0, serverFps: 0, latency: 0,
                 models: [],
                 logs: [],
@@ -301,9 +317,19 @@
                 sendConfig() {
                     if (this.dc && this.dc.readyState === 'open') {
                         this.dc.send(JSON.stringify({
-                            type: 'config', model: this.config.model, task: this.config.task, conf: parseFloat(this.config.conf)
+                            type: 'config',
+
+                            model: this.config.model,
+                            task: this.config.task,
+                            conf: parseFloat(this.config.conf),
+                            retina_masks: this.isRetinaMasks
                         }));
                     }
+                },
+
+                toggleRetinaMasks() {
+                    this.isRetinaMasks = !this.isRetinaMasks;
+                    this.sendConfig();
                 },
 
                 toggleMasks() {
@@ -436,7 +462,7 @@
                             const now = performance.now();
                             this.frameBuffer.push({ time: now, bitmap });
 
-                            while (this.frameBuffer.length > 0 && now - this.frameBuffer[0].time > 1500) {
+                            while (this.frameBuffer.length > 30 || (this.frameBuffer.length > 0 && now - this.frameBuffer[0].time > 1500)) {
                                 const old = this.frameBuffer.shift();
                                 old.bitmap.close();
                             }
@@ -466,60 +492,92 @@
 
                     ctx.drawImage(imageSource, 0, 0, canvas.width, canvas.height);
 
+                    // TMP 
+                    const cw = canvas.width;
+                    const ch = canvas.height;
+
+                    ctx.font = '16px monospace';
+                    ctx.textBaseline = 'top';
+                    ctx.lineJoin = 'round';
+
                     this.currentPredictions.forEach(pred => {
                         const hasId = pred.id !== undefined && pred.id !== -1;
-
                         const GOLDEN_RATIO_CONJUGATE = 0.618033988749895;
-
                         const hue = (pred.id * GOLDEN_RATIO_CONJUGATE * 360) % 360;
-
                         const color = hasId ? `hsl(${hue}, 100%, 50%)` : '#00ff00';
 
-                        const w = canvas.width;
-                        const h = canvas.height;
-                        const [x1, y1, x2, y2] = [pred.box[0] * w, pred.box[1] * h, pred.box[2] * w, pred.box[3] * h];
+                        const x1 = pred.box[0] * cw;
+                        const y1 = pred.box[1] * ch;
+                        const bw = (pred.box[2] - pred.box[0]) * cw;
+                        const bh = (pred.box[3] - pred.box[1]) * ch;
 
-                        const label1 = `${hasId ? 'id:' + pred.id : ''}`;
-                        const label2 = `c:${pred.conf}`;
-
-                        const drawHighContrastText = (text, x, y) => {
-                            if (!text) return;
-
-                            ctx.strokeStyle = 'white';
-                            ctx.lineWidth = 3;
-                            ctx.lineJoin = 'round';
-                            ctx.strokeText(text, x, y);
-
-                            ctx.fillStyle = 'black';
-                            ctx.fillText(text, x, y);
-                        };
-
+                        const labelText = `${pred.id !== -1 ? 'id:' + pred.id + ' ' : ''}c:${pred.conf}`;
 
                         if (!this.isMasks) {
-                            ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-                        } else if (this.isMasks && pred.mask && pred.mask.length > 0) {
-                            ctx.save();
-                            ctx.beginPath();
-                            const pts = pred.mask.map(p => [p[0] * w, p[1] * h]);
-                            ctx.moveTo(pts[0][0], pts[0][1]);
-                            pts.forEach(p => ctx.lineTo(p[0], p[1]));
-                            ctx.closePath();
+                            ctx.strokeStyle = color;
+                            ctx.lineWidth = 3;
+                            ctx.strokeRect(x1, y1, bw, bh);
+                        } else if (pred.mask && pred.mask.length > 0) {
+                            let path = new Path2D();
+                            path.moveTo(pred.mask[0][0] * cw, pred.mask[0][1] * ch);
+                            for (let i = 1; i < pred.mask.length; i++) {
+                                path.lineTo(pred.mask[i][0] * cw, pred.mask[i][1] * ch);
+                            }
+                            path.closePath();
 
                             ctx.globalAlpha = 0.45;
                             ctx.fillStyle = color;
-                            ctx.fill();
-
+                            ctx.fill(path);
                             ctx.globalAlpha = 1.0;
-                            ctx.strokeStyle = color;
-                            ctx.lineWidth = 2;
-                            ctx.stroke();
-                            ctx.restore();
-
                         }
 
-                        drawHighContrastText(label1, x1, y1 - 20);
-                        drawHighContrastText(label2, x1, y1 - 5);
+                        const textWidth = ctx.measureText(labelText).width;
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                        ctx.fillRect(x1, y1 - 22, textWidth + 4, 20);
+
+                        ctx.fillStyle = 'white';
+                        ctx.fillText(labelText, x1 + 2, y1 - 20);
                     });
+
+                    // this.currentPredictions.forEach(pred => {
+
+
+                    //     const w = canvas.width;
+                    //     const h = canvas.height;
+                    //     const [x1, y1, x2, y2] = [pred.box[0] * w, pred.box[1] * h, pred.box[2] * w, pred.box[3] * h];
+
+                    //     const label1 = `${hasId ? 'id:' + pred.id : ''}`;
+                    //     const label2 = `c:${pred.conf}`;
+
+                    //     const drawHighContrastText = (text, x, y) => {
+                    //         if (!text) return;
+
+                    //         ctx.strokeStyle = 'white';
+                    //         ctx.lineWidth = 3;
+                    //         ctx.lineJoin = 'round';
+                    //         ctx.strokeText(text, x, y);
+
+                    //         ctx.fillStyle = 'black';
+                    //         ctx.fillText(text, x, y);
+                    //     };
+
+
+                    //     if (!this.isMasks) {
+                    //         ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                    //     } else if (this.isMasks && pred.mask && pred.mask.length > 0) {
+                    //         let path = new Path2D();
+                    //         path.moveTo(pts[0][0], pts[0][1]);
+                    //         pts.forEach(p => path.lineTo(p[0], p[1]));
+                    //         path.closePath();
+
+                    //         ctx.globalAlpha = 0.45;
+                    //         ctx.fillStyle = color;
+                    //         ctx.fill(path);
+                    //     }
+
+                    //     drawHighContrastText(label1, x1, y1 - 20);
+                    //     drawHighContrastText(label2, x1, y1 - 5);
+                    // });
                 }
             }));
         });

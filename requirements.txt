@@ -1,8 +1,10 @@
 fastapi
 uvicorn
 aiortc
+twilio
 ultralytics
+opencv-python
 openvino
 numpy
-twilio
-lap
+onnxruntime
+onnxruntime-openvino
