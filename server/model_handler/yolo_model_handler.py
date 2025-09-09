@@ -72,7 +72,7 @@ class YoloModelHandler:
             imgsz=self.model_options.size,
             conf=self.predictions_config.conf,
             iou=0.45,
-            tracker="botsort.yaml",
+            tracker="trackers/custom_tracker.yaml",
             half=True,
             persist=True,
             verbose=False,

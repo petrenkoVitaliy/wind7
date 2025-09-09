@@ -3,10 +3,92 @@ import cv2
 import asyncio
 import numpy as np
 import onnxruntime as ort
+from scipy.spatial import distance
+from collections import OrderedDict
 
 from server.model_configs import ModelConfig
 from server.predictions_config import PredictionsConfig
 from server.utils import tprint
+
+
+class CentroidTracker:
+    def __init__(self, max_disappeared=30, max_distance=100):
+        self.next_object_id = 0
+        self.objects = OrderedDict()
+        self.disappeared = OrderedDict()
+        self.max_disappeared = max_disappeared
+        self.max_distance = max_distance
+
+    def update(self, boxes):
+        if len(boxes) == 0:
+            for obj_id in list(self.disappeared.keys()):
+                self.disappeared[obj_id] += 1
+                if self.disappeared[obj_id] > self.max_disappeared:
+                    self.deregister(obj_id)
+            return []
+
+        input_centroids = np.zeros((len(boxes), 2), dtype="int")
+        for i, (startX, startY, endX, endY) in enumerate(boxes):
+            input_centroids[i] = (int((startX + endX) / 2.0),
+                                  int((startY + endY) / 2.0))
+
+        if len(self.objects) == 0:
+            for i in range(len(input_centroids)):
+                self.register(input_centroids[i])
+        else:
+            object_ids = list(self.objects.keys())
+            object_centroids = list(self.objects.values())
+
+            D = distance.cdist(np.array(object_centroids), input_centroids)
+
+            rows = D.min(axis=1).argsort()
+            cols = D.argmin(axis=1)[rows]
+
+            used_rows, used_cols = set(), set()
+
+            for row, col in zip(rows, cols):
+                if row in used_rows or col in used_cols:
+                    continue
+                if D[row, col] > self.max_distance:
+                    continue
+
+                object_id = object_ids[row]
+                self.objects[object_id] = input_centroids[col]
+                self.disappeared[object_id] = 0
+                used_rows.add(row)
+                used_cols.add(col)
+
+            unused_rows = set(range(0, D.shape[0])).difference(used_rows)
+            unused_cols = set(range(0, D.shape[1])).difference(used_cols)
+
+            for row in unused_rows:
+                object_id = object_ids[row]
+                self.disappeared[object_id] += 1
+                if self.disappeared[object_id] > self.max_disappeared:
+                    self.deregister(object_id)
+
+            for col in unused_cols:
+                self.register(input_centroids[col])
+
+        result_ids = []
+        for i in range(len(input_centroids)):
+            matched_id = -1
+            for obj_id, centroid in self.objects.items():
+                if np.array_equal(centroid, input_centroids[i]):
+                    matched_id = obj_id
+                    break
+            result_ids.append(matched_id)
+
+        return result_ids
+
+    def register(self, centroid):
+        self.objects[self.next_object_id] = centroid
+        self.disappeared[self.next_object_id] = 0
+        self.next_object_id += 1
+
+    def deregister(self, object_id):
+        del self.objects[object_id]
+        del self.disappeared[object_id]
 
 
 class OnnxModelHandler:
@@ -15,6 +97,7 @@ class OnnxModelHandler:
         self.model_options = model_options
         self.session = self._init_session()
         self._load_metadata()
+        self.tracker = CentroidTracker()
 
     def _init_session(self):
         sess_options = ort.SessionOptions()
@@ -33,6 +116,7 @@ class OnnxModelHandler:
     async def reload_model(self, predictions_config, model_options):
         self.predictions_config = predictions_config
         self.model_options = model_options
+
         try:
             loop = asyncio.get_event_loop()
             self.session = await loop.run_in_executor(None, self._init_session)
@@ -80,9 +164,18 @@ class OnnxModelHandler:
             raw_masks = np.dot(mask_coeffs, proto_reshaped).reshape(
                 num_masks, proto_h, proto_w)
 
+            scaled_boxes = []
             for i in range(num_masks):
                 bx1, by1, bx2, by2 = self._scale_coords(
                     boxes[i], r, dw, dh, img_w, img_h)
+                scaled_boxes.append([bx1, by1, bx2, by2])
+
+            tracked_ids = [-1] * num_masks
+            if self.predictions_config.task == "track":
+                tracked_ids = self.tracker.update(scaled_boxes)
+
+            for i in range(num_masks):
+                bx1, by1, bx2, by2 = scaled_boxes[i]
                 bw, bh = bx2 - bx1, by2 - by1
                 if bw < 2 or bh < 2:
                     continue
@@ -103,7 +196,7 @@ class OnnxModelHandler:
                 binary_mask = (m_resized > 0).astype(np.uint8)
 
                 contours, _ = cv2.findContours(
-                    binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # CHAIN_APPROX_TC89_KCOS
+                    binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS if self.predictions_config.retina_masks else cv2.CHAIN_APPROX_SIMPLE)
 
                 norm_mask = []
                 if contours:
@@ -118,7 +211,7 @@ class OnnxModelHandler:
                     "box": [float(bx1/img_w), float(by1/img_h), float(bx2/img_w), float(by2/img_h)],
                     "mask": norm_mask,
                     "label": str(classes[i]),
-                    "id": -1,
+                    "id": tracked_ids[i],
                     "conf": round(float(scores[i]), 2)
                 })
 
