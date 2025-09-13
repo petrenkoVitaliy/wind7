@@ -2,96 +2,17 @@ import time
 import cv2
 import asyncio
 import numpy as np
+import torch
 import onnxruntime as ort
-from scipy.spatial import distance
-from collections import OrderedDict
 
 from server.model_configs import ModelConfig
+from server.model_handler.model_handler import ModelHandler
+from server.model_handler.onnx_model_handler.trackers.centroid_tracker import CentroidTracker
 from server.predictions_config import PredictionsConfig
 from server.utils import tprint
 
 
-class CentroidTracker:
-    def __init__(self, max_disappeared=30, max_distance=100):
-        self.next_object_id = 0
-        self.objects = OrderedDict()
-        self.disappeared = OrderedDict()
-        self.max_disappeared = max_disappeared
-        self.max_distance = max_distance
-
-    def update(self, boxes):
-        if len(boxes) == 0:
-            for obj_id in list(self.disappeared.keys()):
-                self.disappeared[obj_id] += 1
-                if self.disappeared[obj_id] > self.max_disappeared:
-                    self.deregister(obj_id)
-            return []
-
-        input_centroids = np.zeros((len(boxes), 2), dtype="int")
-        for i, (startX, startY, endX, endY) in enumerate(boxes):
-            input_centroids[i] = (int((startX + endX) / 2.0),
-                                  int((startY + endY) / 2.0))
-
-        if len(self.objects) == 0:
-            for i in range(len(input_centroids)):
-                self.register(input_centroids[i])
-        else:
-            object_ids = list(self.objects.keys())
-            object_centroids = list(self.objects.values())
-
-            D = distance.cdist(np.array(object_centroids), input_centroids)
-
-            rows = D.min(axis=1).argsort()
-            cols = D.argmin(axis=1)[rows]
-
-            used_rows, used_cols = set(), set()
-
-            for row, col in zip(rows, cols):
-                if row in used_rows or col in used_cols:
-                    continue
-                if D[row, col] > self.max_distance:
-                    continue
-
-                object_id = object_ids[row]
-                self.objects[object_id] = input_centroids[col]
-                self.disappeared[object_id] = 0
-                used_rows.add(row)
-                used_cols.add(col)
-
-            unused_rows = set(range(0, D.shape[0])).difference(used_rows)
-            unused_cols = set(range(0, D.shape[1])).difference(used_cols)
-
-            for row in unused_rows:
-                object_id = object_ids[row]
-                self.disappeared[object_id] += 1
-                if self.disappeared[object_id] > self.max_disappeared:
-                    self.deregister(object_id)
-
-            for col in unused_cols:
-                self.register(input_centroids[col])
-
-        result_ids = []
-        for i in range(len(input_centroids)):
-            matched_id = -1
-            for obj_id, centroid in self.objects.items():
-                if np.array_equal(centroid, input_centroids[i]):
-                    matched_id = obj_id
-                    break
-            result_ids.append(matched_id)
-
-        return result_ids
-
-    def register(self, centroid):
-        self.objects[self.next_object_id] = centroid
-        self.disappeared[self.next_object_id] = 0
-        self.next_object_id += 1
-
-    def deregister(self, object_id):
-        del self.objects[object_id]
-        del self.disappeared[object_id]
-
-
-class OnnxModelHandler:
+class OnnxModelHandler(ModelHandler):
     def __init__(self, predictions_config: PredictionsConfig, model_options: ModelConfig):
         self.predictions_config = predictions_config
         self.model_options = model_options
@@ -102,8 +23,23 @@ class OnnxModelHandler:
     def _init_session(self):
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        sess_options.intra_op_num_threads = 4
-        providers = ['OpenVINOExecutionProvider', 'CPUExecutionProvider']
+        sess_options.intra_op_num_threads = 2
+
+        available = ort.get_available_providers()
+
+        providers = []
+
+        if 'CUDAExecutionProvider' in available:
+            providers.append(('CUDAExecutionProvider', {
+                'device_id': 0,
+                'arena_extend_strategy': 'kNextPowerOfTwo',
+            }))
+
+        if 'OpenVINOExecutionProvider' in available:
+            providers.append('OpenVINOExecutionProvider')
+
+        providers.append('CPUExecutionProvider')
+
         return ort.InferenceSession(str(self.model_options.path), sess_options=sess_options, providers=providers)
 
     def _load_metadata(self):
@@ -161,8 +97,14 @@ class OnnxModelHandler:
             proto_c, proto_h, proto_w = protos.shape
 
             proto_reshaped = protos.reshape(proto_c, -1)
-            raw_masks = np.dot(mask_coeffs, proto_reshaped).reshape(
-                num_masks, proto_h, proto_w)
+            raw_masks = np.dot(
+                mask_coeffs,
+                proto_reshaped
+            ).reshape(
+                num_masks,
+                proto_h,
+                proto_w
+            )
 
             scaled_boxes = []
             for i in range(num_masks):
@@ -196,7 +138,9 @@ class OnnxModelHandler:
                 binary_mask = (m_resized > 0).astype(np.uint8)
 
                 contours, _ = cv2.findContours(
-                    binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS if self.predictions_config.retina_masks else cv2.CHAIN_APPROX_SIMPLE)
+                    binary_mask, cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_TC89_KCOS if self.predictions_config.retina_masks else cv2.CHAIN_APPROX_SIMPLE
+                )
 
                 norm_mask = []
                 if contours:

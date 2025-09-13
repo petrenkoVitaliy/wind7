@@ -8,9 +8,10 @@ import numpy as np
 from server.model_configs import ModelConfig
 from server.predictions_config import PredictionsConfig
 from server.utils import tprint
+from server.model_handler.model_handler import ModelHandler
 
 
-class YoloModelHandler:
+class YoloModelHandler(ModelHandler):
     def __init__(self, predictions_config: PredictionsConfig, model_options: ModelConfig):
         self.predictions_config = predictions_config
         self.model_options = model_options
@@ -72,7 +73,7 @@ class YoloModelHandler:
             imgsz=self.model_options.size,
             conf=self.predictions_config.conf,
             iou=0.45,
-            tracker="trackers/custom_tracker.yaml",
+            tracker="server/model_handler/yolo_model_handler/trackers/custom_tracker.yaml",
             half=True,
             persist=True,
             verbose=False,
@@ -86,7 +87,7 @@ class YoloModelHandler:
             imgsz=self.model_options.size,
             conf=self.predictions_config.conf,
             iou=0.45,
-            half=True,
+            half=False,
             retina_masks=self.predictions_config.retina_masks,
             verbose=False,
         )[0]

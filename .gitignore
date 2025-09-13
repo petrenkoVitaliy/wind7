@@ -2,3 +2,5 @@
 /__pycache__
 /server/__pycache__
 /server/model_handler/__pycache__
+/onnx_cache
+/scripts

@@ -8,3 +8,6 @@ openvino
 numpy
 onnxruntime
 onnxruntime-openvino
+onnxruntime-gpu==1.17.1
+psutil
+nvidia-ml-py

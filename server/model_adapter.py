@@ -1,14 +1,15 @@
 from server.model_configs import ModelConfig, ModelType, ModelsConfig
-from server.model_handler.onnx_model_handler import OnnxModelHandler
+from server.model_handler.model_handler import ModelHandler
+from server.model_handler.onnx_model_handler.onnx_model_handler import OnnxModelHandler
 from server.predictions_config import PredictionsConfig
-from server.model_handler.yolo_model_handler import YoloModelHandler
+from server.model_handler.yolo_model_handler.yolo_model_handler import YoloModelHandler
 from server.utils import tprint
 
 
-class ModelController:
+class ModelAdapter:
     def __init__(self, predictions_config: PredictionsConfig):
         self.model_type = None
-        self.model_handler = None
+        self.model_handler: ModelHandler | None = None
 
         self._update_model_handler(predictions_config)
 

@@ -75,11 +75,44 @@
                             d="M4 6h16M4 12h16M4 18h7" />
                     </svg>
                 </button>
+                <button @click="showStats = !showStats; if(showStats) fetchStats()"
+                    class="glass p-2 rounded-full hover:bg-white/20 transition"
+                    :class="showStats ? 'text-purple-400' : 'text-white'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </button>
                 <button @click="window.location.reload()" class="glass p-2 rounded-full hover:bg-white/10">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
+                </button>
+            </div>
+        </div>
+
+        <div x-show="showStats" x-transition class="absolute top-20 right-6 z-50 pointer-events-auto">
+            <div class="glass px-4 py-3 rounded-xl flex flex-col gap-2 text-[10px] font-mono w-52 shadow-xl">
+                <div class="text-white/50 font-bold tracking-widest mb-1">INSTANCE STATS</div>
+
+                <div class="flex justify-between"><span>GPU:</span> <span class="text-purple-400 truncate ml-2"
+                        x-text="stats.gpu"></span></div>
+                <div class="flex justify-between"><span>GPU Load:</span> <span class="text-white font-bold"
+                        x-text="stats.gpu_load"></span></div>
+                <div class="flex justify-between"><span>VRAM:</span> <span class="text-gray-300"
+                        x-text="stats.vram"></span></div>
+
+                <div class="w-full h-px bg-white/20 my-0.5"></div>
+
+                <div class="flex justify-between"><span>CPU Load:</span> <span class="text-white"
+                        x-text="stats.cpu"></span></div>
+                <div class="flex justify-between"><span>RAM:</span> <span class="text-gray-300"
+                        x-text="stats.ram"></span></div>
+
+                <button @click="fetchStats()"
+                    class="mt-2 w-full py-1.5 rounded bg-white/10 hover:bg-white/20 transition active:scale-95 font-bold">
+                    REFRESH
                 </button>
             </div>
         </div>
@@ -229,13 +262,16 @@
                 drawLabels: true,
                 showMetrics: true,
                 showLogs: false,
+                showStats: true,
 
                 config: { model: '', task: 'track', conf: 0.4 },
                 metrics: { pre: 0, inf: 0, post: 0, total: 0, normalize: 0 },
-
                 averageMetrics: { max: 5, metrics: [], aggregation: { pre: 0, inf: 0, post: 0, total: 0, normalize: 0 } },
+                stats: { cpu: '...', ram: '...', gpu: '...', gpu_load: '...', vram: '...' },
 
-                clientFps: 0, serverFps: 0, latency: 0,
+                clientFps: 0,
+                serverFps: 0,
+                latency: 0,
                 models: [],
                 logs: [],
 
@@ -261,9 +297,16 @@
                     try {
                         const res = await fetch('/models');
                         const data = await res.json();
+
                         this.models = data.models;
-                        if (this.models.length > 0) this.config.model = this.models[0];
-                    } catch (e) { console.error("Models fetch failed"); }
+                        this.stats = data.stats;
+
+                        if (this.models.length > 0) {
+                            this.config.model = this.models[0];
+                        }
+                    } catch (e) {
+                        console.error("Models fetch failed");
+                    }
 
                     setInterval(() => this.measureLatency(), 1000);
                 },
@@ -286,6 +329,13 @@
                     if (this.dc && this.dc.readyState === 'open') {
                         this.dc.send(JSON.stringify({ type: 'ping', timestamp: performance.now() }));
                     }
+                },
+
+                async fetchStats() {
+                    try {
+                        const res = await fetch('/stats');
+                        this.stats = (await res.json()).stats;
+                    } catch (e) { }
                 },
 
                 async start() {
