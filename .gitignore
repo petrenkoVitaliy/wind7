@@ -4,3 +4,8 @@
 /server/model_handler/__pycache__
 /onnx_cache
 /scripts
+gathered_code.txt
+tmp.txt
+/logs
+**/__pycache__
+**/*.pyc

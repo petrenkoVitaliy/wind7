@@ -1,6 +1,7 @@
 import time
 import threading
 
+import torch
 from ultralytics import YOLO
 import asyncio
 import numpy as np
@@ -17,6 +18,9 @@ class YoloModelHandler(ModelHandler):
         self.model_options = model_options
 
         self.model = YOLO(str(self.model_options.path), task='segment')
+
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.use_half = self.device == 'cuda'
 
         self.model_lock = threading.Lock()
         self.is_reloading = False
@@ -41,10 +45,10 @@ class YoloModelHandler(ModelHandler):
         def _reload_task():
             try:
                 tprint(
-                    f"RELOAD: Loading new OpenVINO model for {predictions_config.model_name}...")
+                    f"RELOAD::YOLO: Loading new YOLO model for {predictions_config.model_name}...")
                 new_model = YOLO(str(model_options.path), task='segment')
 
-                tprint("RELOAD: Warming up OpenVINO...")
+                tprint("RELOAD::YOLO: Warming up YOLO...")
                 dummy_frame = np.zeros(
                     (model_options.size, model_options.size, 3), dtype=np.uint8)
                 new_model.predict(
@@ -55,7 +59,7 @@ class YoloModelHandler(ModelHandler):
                     self.predictions_config = predictions_config
                     self.model_options = model_options
             except Exception as e:
-                tprint(f"ERROR: OpenVINO reload failed: {e}")
+                tprint(f"ERROR::YOLO: YOLO reload failed: {e}")
 
         try:
             await asyncio.to_thread(_reload_task)
@@ -69,12 +73,13 @@ class YoloModelHandler(ModelHandler):
     def _get_track_results(self, frame):
         return self.model.track(
             frame,
+            device=self.device,
             task="segment",
             imgsz=self.model_options.size,
             conf=self.predictions_config.conf,
             iou=0.45,
             tracker="server/model_handler/yolo_model_handler/trackers/custom_tracker.yaml",
-            half=True,
+            half=self.use_half,
             persist=True,
             verbose=False,
             retina_masks=self.predictions_config.retina_masks
@@ -83,11 +88,12 @@ class YoloModelHandler(ModelHandler):
     def _get_predict_results(self, frame):
         return self.model.predict(
             frame,
+            device=self.device,
             task="segment",
             imgsz=self.model_options.size,
             conf=self.predictions_config.conf,
             iou=0.45,
-            half=False,
+            half=self.use_half,
             retina_masks=self.predictions_config.retina_masks,
             verbose=False,
         )[0]

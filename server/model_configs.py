@@ -21,6 +21,13 @@ MODEL_BASE_PATH = Path("models")
 
 class ModelsConfig(Enum):
     # YOLO models
+    S26_PT_640 = ModelConfig(
+        size=640, name="S26_PT_640", path=MODEL_BASE_PATH / "best.pt", model_type=ModelType.YOLO)
+    S26_PT_800 = ModelConfig(
+        size=800, name="S26_PT_800", path=MODEL_BASE_PATH / "best.pt", model_type=ModelType.YOLO)
+    S26_ENGINE_800 = ModelConfig(
+        size=800, name="S26_ENGINE_800", path=MODEL_BASE_PATH / "best.engine", model_type=ModelType.YOLO)
+
     S26_OPENVINO_640 = ModelConfig(
         size=640, name="S26_OPENVINO_640", path=MODEL_BASE_PATH / "best_openvino_model_640_s", model_type=ModelType.YOLO)
     S26_OPENVINO_640_HALF = ModelConfig(
@@ -33,11 +40,6 @@ class ModelsConfig(Enum):
     S26_OPENVINO_800_INT8 = ModelConfig(
         size=800, name="S26_OPENVINO_800_INT8", path=MODEL_BASE_PATH / "best_openvino_model_800_s_int8", model_type=ModelType.YOLO)
 
-    S26_PT_640 = ModelConfig(
-        size=640, name="S26_PT_640", path=MODEL_BASE_PATH / "best.pt", model_type=ModelType.YOLO)
-    S26_PT_800 = ModelConfig(
-        size=800, name="S26_PT_800", path=MODEL_BASE_PATH / "best.pt", model_type=ModelType.YOLO)
-
     N26_OPENVINO_800 = ModelConfig(
         size=800, name="N26_OPENVINO_800", path=MODEL_BASE_PATH / "best_openvino_model_800_n", model_type=ModelType.YOLO)
     N26_OPENVINO_640 = ModelConfig(
@@ -48,3 +50,5 @@ class ModelsConfig(Enum):
         size=800, name="S26_ONNX_800", path=MODEL_BASE_PATH / "best_onnx_800_s.onnx", model_type=ModelType.ONNX)
     S26_ONNX_640 = ModelConfig(
         size=640, name="S26_ONNX_640", path=MODEL_BASE_PATH / "best_onnx_640_s.onnx", model_type=ModelType.ONNX)
+    S26_ENGINE_ONNX_800 = ModelConfig(
+        size=800, name="S26_ENGINE_ONNX_800", path=MODEL_BASE_PATH / "best.engine", model_type=ModelType.ONNX)

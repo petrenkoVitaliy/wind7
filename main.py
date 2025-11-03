@@ -21,12 +21,16 @@ TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 NUM_THREADS = os.environ.get("NUM_THREADS", "1")
 
-
 DEV_ENV = os.environ.get("DEV_ENV", "false").lower() == "true"
 if DEV_ENV:
     tprint("INIT: using dev env")
 
-num_threads = str(multiprocessing.cpu_count()) if DEV_ENV else NUM_THREADS
+IS_VAST = os.environ.get("VAST_CONTAINERLABEL") is not None
+
+num_threads = str(multiprocessing.cpu_count()) if (
+    DEV_ENV or IS_VAST) else NUM_THREADS
+
+tprint(f"INIT: Setting number of threads to {num_threads}")
 
 os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
 os.environ["OMP_NUM_THREADS"] = num_threads
@@ -108,7 +112,7 @@ async def offer(request: Request):
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
-        tprint(f"Connection state is {pc.connectionState}")
+        tprint(f"INIT: Connection state is {pc.connectionState}")
         if pc.connectionState in ["failed", "closed"]:
             peer_connections.discard(pc)
 
@@ -141,6 +145,7 @@ async def offer(request: Request):
 
                         return
 
+                    tprint("--" * 10)
                     tprint(f"RELOAD: Received config: {data}")
 
                     await pc.video_track.update_predictions_config(data)

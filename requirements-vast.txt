@@ -1,0 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+numpy<2.0.0
+fastapi
+uvicorn
+aiortc
+twilio
+ultralytics
+opencv-python-headless
+psutil
+nvidia-ml-py
+onnx>=1.16.0
+onnxruntime-gpu>=1.18.1
+torch==2.2.2+cu121
+torchvision==0.17.2+cu121
+openvino>=2024.0.0 
+lap>=0.5.12

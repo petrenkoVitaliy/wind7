@@ -1,0 +1,8 @@
+**/__pycache__
+**/*.pyc
+.git
+.env
+onnx_cache/
+gathered_code.txt
+tmp.txt
+.git

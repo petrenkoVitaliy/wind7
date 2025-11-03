@@ -2,12 +2,12 @@ import time
 import cv2
 import asyncio
 import numpy as np
-import torch
+import torch  # used for drivers load
 import onnxruntime as ort
 
 from server.model_configs import ModelConfig
 from server.model_handler.model_handler import ModelHandler
-from server.model_handler.onnx_model_handler.trackers.centroid_tracker import CentroidTracker
+from server.model_handler.onnx_model_handler.trackers.kalman_tracker import KalmanTracker
 from server.predictions_config import PredictionsConfig
 from server.utils import tprint
 
@@ -18,12 +18,15 @@ class OnnxModelHandler(ModelHandler):
         self.model_options = model_options
         self.session = self._init_session()
         self._load_metadata()
-        self.tracker = CentroidTracker()
+        self.tracker = KalmanTracker(
+            max_disappeared=30, max_distance=100)
 
     def _init_session(self):
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         sess_options.intra_op_num_threads = 2
+        sess_options.inter_op_num_threads = 1
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         available = ort.get_available_providers()
 
@@ -33,6 +36,8 @@ class OnnxModelHandler(ModelHandler):
             providers.append(('CUDAExecutionProvider', {
                 'device_id': 0,
                 'arena_extend_strategy': 'kNextPowerOfTwo',
+                'cudnn_conv_algo_search': 'EXHAUSTIVE',
+                'do_copy_in_default_stream': True,
             }))
 
         if 'OpenVINOExecutionProvider' in available:
@@ -40,7 +45,13 @@ class OnnxModelHandler(ModelHandler):
 
         providers.append('CPUExecutionProvider')
 
-        return ort.InferenceSession(str(self.model_options.path), sess_options=sess_options, providers=providers)
+        tprint(f"INIT::ONNX: Using providers: {providers}")
+
+        return ort.InferenceSession(
+            str(self.model_options.path),
+            sess_options=sess_options,
+            providers=providers
+        )
 
     def _load_metadata(self):
         self.input_name = self.session.get_inputs()[0].name
