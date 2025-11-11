@@ -36,10 +36,23 @@
             backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
     </style>
 </head>
 
-<body x-data="visionApp" class="text-white text-sm">
+<body x-data="visionApp" class="text-white text-sm" x-cloak>
 
     <div id="container">
         <video id="video" x-ref="video" autoplay playsinline
@@ -48,8 +61,10 @@
 
         <div x-show="loading" x-transition.opacity
             class="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
-            <div class="w-16 h-16 border-4 border-green-500/20 border-t-green-500 rounded-full animate-spin mb-4"></div>
-            <div class="text-green-400 font-mono text-sm tracking-widest animate-pulse">ESTABLISHING AI LINK...</div>
+            <div class="w-16 h-16 border-4 border-green-500/20 border-t-green-500 rounded-full animate-spin mb-4">
+            </div>
+            <div class="text-green-400 font-mono text-sm tracking-widest animate-pulse">ESTABLISHING AI LINK...
+            </div>
             <div class="text-[10px] text-white/40 mt-2" x-text="'ICE: ' + iceState"></div>
         </div>
 
@@ -60,19 +75,22 @@
                 <span class="text-xs font-mono tracking-widest" x-text="connected ? 'LIVE' : 'OFFLINE'"></span>
             </div>
 
-            <div class="flex gap-2">
+            <div class="flex gap-2 relative">
                 <button @click="showLogs = !showLogs" class="glass p-2 rounded-full hover:bg-white/20 transition"
                     :class="showLogs ? 'text-blue-400' : 'text-white'">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                 </button>
                 <button @click="showMetrics = !showMetrics" class="glass p-2 rounded-full hover:bg-white/20 transition"
                     :class="showMetrics ? 'text-green-400' : 'text-white'">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 6h16M4 12h16M4 18h7" />
+                            d="M12 13a2 2 0 100-4 2 2 0 000 4z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11V6" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 12a9 9 0 00-18 0" />
                     </svg>
                 </button>
                 <button @click="showStats = !showStats; if(showStats) fetchStats()"
@@ -80,10 +98,18 @@
                     :class="showStats ? 'text-purple-400' : 'text-white'">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z" />
                     </svg>
                 </button>
-                <button @click="window.location.reload()" class="glass p-2 rounded-full hover:bg-white/10">
+                <button @click="showControls = !showControls"
+                    class="glass p-2 rounded-full hover:bg-white/20 transition"
+                    :class="showControls ? 'text-orange-400' : 'text-white'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+                    </svg>
+                </button>
+                <button @click="window.location.reload()" class="glass p-2 rounded-full hover:bg-white/10 text-white">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -95,25 +121,19 @@
         <div x-show="showStats" x-transition class="absolute top-20 right-6 z-50 pointer-events-auto">
             <div class="glass px-4 py-3 rounded-xl flex flex-col gap-2 text-[10px] font-mono w-52 shadow-xl">
                 <div class="text-white/50 font-bold tracking-widest mb-1">INSTANCE STATS</div>
-
                 <div class="flex justify-between"><span>GPU:</span> <span class="text-purple-400 truncate ml-2"
                         x-text="stats.gpu"></span></div>
                 <div class="flex justify-between"><span>GPU Load:</span> <span class="text-white font-bold"
                         x-text="stats.gpu_load"></span></div>
                 <div class="flex justify-between"><span>VRAM:</span> <span class="text-gray-300"
                         x-text="stats.vram"></span></div>
-
                 <div class="w-full h-px bg-white/20 my-0.5"></div>
-
                 <div class="flex justify-between"><span>CPU Load:</span> <span class="text-white"
                         x-text="stats.cpu"></span></div>
                 <div class="flex justify-between"><span>RAM:</span> <span class="text-gray-300"
                         x-text="stats.ram"></span></div>
-
                 <button @click="fetchStats()"
-                    class="mt-2 w-full py-1.5 rounded bg-white/10 hover:bg-white/20 transition active:scale-95 font-bold">
-                    REFRESH
-                </button>
+                    class="mt-2 w-full py-1.5 rounded bg-white/10 hover:bg-white/20 transition active:scale-95 font-bold">REFRESH</button>
             </div>
         </div>
 
@@ -128,14 +148,15 @@
                 <div>Norm: <span class="text-white font-bold" x-text="metrics.normalize"></span>ms</div>
                 <div>Post: <span class="text-gray-300" x-text="metrics.post"></span>ms</div>
                 <div>Total: <span class="text-yellow-400" x-text="metrics.total"></span>ms</div>
-
                 <div class="w-full h-px bg-white/20 my-0.5"></div>
                 <div>Avg Pre: <span class="text-gray-300" x-text="averageMetrics.aggregation.pre"></span>ms</div>
-                <div>Avg Inf: <span class="text-white font-bold" x-text="averageMetrics.aggregation.inf"></span>ms</div>
+                <div>Avg Inf: <span class="text-white font-bold" x-text="averageMetrics.aggregation.inf"></span>ms
+                </div>
                 <div>Avg Norm: <span class="text-white font-bold"
                         x-text="averageMetrics.aggregation.normalize"></span>ms</div>
                 <div>Avg Post: <span class="text-gray-300" x-text="averageMetrics.aggregation.post"></span>ms</div>
-                <div>Avg Total: <span class="text-yellow-400" x-text="averageMetrics.aggregation.total"></span>ms</div>
+                <div>Avg Total: <span class="text-yellow-400" x-text="averageMetrics.aggregation.total"></span>ms
+                </div>
             </div>
         </div>
 
@@ -145,45 +166,126 @@
                     <span class="text-[10px] font-bold tracking-widest opacity-50">SYSTEM LOGS</span>
                     <button @click="logs = []" class="text-[10px] text-red-400 hover:text-red-300">CLEAR</button>
                 </div>
-                <div class="flex-1 overflow-y-auto p-4 font-mono text-[9px] space-y-1">
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-4 font-mono text-[9px] space-y-1">
                     <template x-for="(log, i) in logs" :key="i">
                         <div class="flex gap-2">
                             <span class="opacity-30" x-text="log.time"></span>
-                            <span :class="{
-                                'text-white': log.type === 'log',
-                                'text-red-400': log.type === 'error',
-                                'text-yellow-400': log.type === 'warn',
-                                'text-blue-400': log.type === 'info'
-                            }" x-text="log.msg"></span>
+                            <span
+                                :class="{ 'text-white': log.type === 'log', 'text-red-400': log.type === 'error', 'text-yellow-400': log.type === 'warn', 'text-blue-400': log.type === 'info' }"
+                                x-text="log.msg"></span>
                         </div>
                     </template>
                 </div>
             </div>
         </div>
 
-        <div class="absolute bottom-6 left-4 right-4 z-50 mb-safe">
+        <div x-show="showControls" x-transition class="absolute bottom-6 left-4 right-4 z-50 mb-safe">
             <div class="glass rounded-3xl p-4 flex flex-col gap-3 shadow-2xl">
 
                 <div class="grid grid-cols-2 gap-2">
-                    <select x-model="config.task" @change="sendConfig()"
-                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold">
-                        <option value="track">Track (IDs)</option>
-                        <option value="predict">Predict (No IDs)</option>
-                    </select>
 
-                    <select x-model="config.model" @change="sendConfig()"
-                        class="bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold text-green-400">
-                        <template x-for="m in models" :key="m">
-                            <option :value="m" x-text="m"></option>
-                        </template>
-                    </select>
+                    <div class="relative" @click.away="openDrop = openDrop === 'task' ? null : openDrop">
+                        <button @click="openDrop = openDrop === 'task' ? null : 'task'"
+                            class="w-full bg-white/10 px-3 py-2 rounded-xl text-left flex justify-between items-center hover:bg-white/20 transition">
+                            <span class="text-xs font-semibold truncate"
+                                x-text="tasks.find(t => t.id === config.task)?.name || 'Task'"></span>
+                            <svg class="w-3 h-3 opacity-50 shrink-0" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path d="M19 9l-7 7-7-7" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <div x-show="openDrop === 'task'" x-transition
+                            class="absolute bottom-full mb-1 left-0 w-full glass rounded-xl overflow-hidden z-50 shadow-xl border border-white/10">
+                            <template x-for="t in tasks" :key="t.id">
+                                <button @click="config.task = t.id; openDrop = null; sendConfig()"
+                                    class="w-full text-left px-3 py-2 hover:bg-white/10 transition border-b border-white/5 last:border-0">
+                                    <div class="text-xs font-bold"
+                                        :class="config.task === t.id ? 'text-green-400' : 'text-white'" x-text="t.name">
+                                    </div>
+                                    <div class="text-[10px] text-white/50" x-text="t.desc"></div>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
 
-                    <select x-model="qualityName" @change="applyQuality()"
-                        class="col-span-2 bg-white/10 px-3 py-2 rounded-xl outline-none text-xs appearance-none text-center font-semibold">
-                        <template x-for="q in qualities" :key="q.name">
-                            <option :value="q.name" x-text="q.name + ' (' + q.res + ')'"></option>
-                        </template>
-                    </select>
+                    <div class="relative" @click.away="openDrop = openDrop === 'model' ? null : openDrop">
+                        <button @click="openDrop = openDrop === 'model' ? null : 'model'"
+                            class="w-full bg-white/10 px-3 py-2 rounded-xl text-left flex justify-between items-center hover:bg-white/20 transition text-green-400">
+                            <span class="text-xs font-semibold truncate"
+                                x-text="modelsList.find(m => m.id === config.model)?.name || 'Loading Model...'"></span>
+                            <svg class="w-3 h-3 opacity-50 shrink-0 text-white" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path d="M19 9l-7 7-7-7" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <div x-show="openDrop === 'model'" x-transition
+                            class="absolute bottom-full mb-1 left-0 w-full glass rounded-xl overflow-y-auto max-h-48 custom-scrollbar z-50 shadow-xl border border-white/10">
+                            <template x-for="m in modelsList" :key="m.id">
+                                <button @click="config.model = m.id; openDrop = null; sendConfig()"
+                                    class="w-full text-left px-3 py-2 hover:bg-white/10 transition border-b border-white/5 last:border-0">
+                                    <div class="text-xs font-bold"
+                                        :class="config.model === m.id ? 'text-green-400' : 'text-white'"
+                                        x-text="m.name"></div>
+                                    <div class="text-[10px] text-white/50" x-text="m.desc"></div>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="relative transition-opacity duration-300"
+                        :class="config.task !== 'track' ? 'opacity-40 pointer-events-none' : ''"
+                        @click.away="openDrop = openDrop === 'tracker' ? null : openDrop">
+                        <button @click="openDrop = openDrop === 'tracker' ? null : 'tracker'"
+                            class="w-full bg-white/10 px-3 py-2 rounded-xl text-left flex justify-between items-center hover:bg-white/20 transition text-blue-300">
+                            <span class="text-xs font-semibold truncate"
+                                x-text="trackers.find(t => t.id === config.tracker)?.name || 'Tracker'"></span>
+                            <svg class="w-3 h-3 opacity-50 shrink-0 text-white" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path d="M19 9l-7 7-7-7" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <div x-show="openDrop === 'tracker'" x-transition
+                            class="absolute bottom-full mb-1 left-0 w-full glass rounded-xl overflow-hidden z-50 shadow-xl border border-white/10">
+                            <template x-for="t in trackers" :key="t.id">
+                                <button @click="config.tracker = t.id; openDrop = null; sendConfig()"
+                                    class="w-full text-left px-3 py-2 hover:bg-white/10 transition border-b border-white/5 last:border-0">
+                                    <div class="text-xs font-bold"
+                                        :class="config.tracker === t.id ? 'text-blue-400' : 'text-white'"
+                                        x-text="t.name"></div>
+                                    <div class="text-[10px] text-white/50" x-text="t.desc"></div>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="relative" @click.away="openDrop = openDrop === 'quality' ? null : openDrop">
+                        <button @click="openDrop = openDrop === 'quality' ? null : 'quality'"
+                            class="w-full bg-white/10 px-3 py-2 rounded-xl text-left flex justify-between items-center hover:bg-white/20 transition text-yellow-300">
+                            <span class="text-xs font-semibold truncate"
+                                x-text="currentQuality.name + ' (' + currentQuality.res + ')'"></span>
+                            <svg class="w-3 h-3 opacity-50 shrink-0 text-white" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path d="M19 9l-7 7-7-7" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <div x-show="openDrop === 'quality'" x-transition
+                            class="absolute bottom-full mb-1 left-0 w-full glass rounded-xl overflow-hidden z-50 shadow-xl border border-white/10">
+                            <template x-for="q in qualities" :key="q.name">
+                                <button @click="qualityName = q.name; openDrop = null; applyQuality()"
+                                    class="w-full text-left px-3 py-2 hover:bg-white/10 transition border-b border-white/5 last:border-0">
+                                    <div class="text-xs font-bold"
+                                        :class="qualityName === q.name ? 'text-yellow-400' : 'text-white'"
+                                        x-text="q.name + ' (' + q.res + ')'"></div>
+                                    <div class="text-[10px] text-white/50" x-text="q.desc"></div>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
                 </div>
 
                 <div class="flex items-center gap-3 text-xs px-1">
@@ -260,11 +362,31 @@
                 isRetinaMasks: true,
                 syncMode: false,
                 drawLabels: false,
+
+                showControls: true,
                 showMetrics: false,
                 showLogs: false,
                 showStats: false,
+                openDrop: null,
 
-                config: { model: '', task: 'track', conf: 0.4 },
+                config: { model: '', task: 'track', tracker: 'bytetrack', conf: 0.4 },
+
+                tasks: [
+                    { id: 'track', name: 'Track (IDs)', desc: 'Track objects across frames' },
+                    { id: 'predict', name: 'Predict (No IDs)', desc: 'Standard YOLO detection' }
+                ],
+                trackers: [
+                    { id: 'bytetrack', name: 'ByteTrack', desc: 'ONNX only' },
+                    { id: 'botsort', name: 'BoT-SORT', desc: 'ONNX only' }
+                ],
+                qualities: [
+                    { name: 'FullHD Accuracy', desc: '', w: 1920, h: 1080, res: '1080p' },
+                    { name: 'High Accuracy', desc: '', w: 1280, h: 720, res: '720p' },
+                    { name: 'Balanced', desc: '', w: 640, h: 480, res: '480p' },
+                    { name: 'Performance', desc: '', w: 320, h: 240, res: '240p' },
+                ],
+                modelsList: [],
+
                 metrics: { pre: 0, inf: 0, post: 0, total: 0, normalize: 0 },
                 averageMetrics: { max: 5, metrics: [], aggregation: { pre: 0, inf: 0, post: 0, total: 0, normalize: 0 } },
                 stats: { cpu: '...', ram: '...', gpu: '...', gpu_load: '...', vram: '...' },
@@ -272,16 +394,10 @@
                 clientFps: 0,
                 serverFps: 0,
                 latency: 0,
-                models: [],
                 logs: [],
 
                 qualityName: 'High Accuracy',
                 currentQuality: { name: 'High Accuracy', w: 1280, h: 720, res: '720p' },
-                qualities: [
-                    { name: 'High Accuracy', w: 1280, h: 720, res: '720p' },
-                    { name: 'Balanced', w: 640, h: 480, res: '480p' },
-                    { name: 'Performance', w: 320, h: 240, res: '240p' },
-                ],
 
                 pc: null,
                 dc: null,
@@ -298,11 +414,12 @@
                         const res = await fetch('/models');
                         const data = await res.json();
 
-                        this.models = data.models;
                         this.stats = data.stats;
 
-                        if (this.models.length > 0) {
-                            this.config.model = this.models[0];
+                        this.modelsList = data.models.map(({ name, description }) => ({ id: name, name, desc: description }));
+
+                        if (this.modelsList.length > 0) {
+                            this.config.model = this.modelsList[0].id;
                         }
                     } catch (e) {
                         console.error("Models fetch failed");
@@ -386,6 +503,7 @@
                             type: 'config',
                             model: this.config.model,
                             task: this.config.task,
+                            tracker: this.config.tracker,
                             conf: parseFloat(this.config.conf),
                             retina_masks: this.isRetinaMasks
                         }));

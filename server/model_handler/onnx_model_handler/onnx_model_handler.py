@@ -7,19 +7,23 @@ import onnxruntime as ort
 
 from server.model_configs import ModelConfig
 from server.model_handler.model_handler import ModelHandler
-from server.model_handler.onnx_model_handler.trackers.kalman_tracker import KalmanTracker
+from server.model_handler.onnx_model_handler.trackers.botsort_tracker import BoTSORT
+from server.model_handler.onnx_model_handler.trackers.byte_tracker import ByteTrack
 from server.predictions_config import PredictionsConfig
 from server.utils import tprint
 
+TRACKERS = {
+    "bytetrack": ByteTrack,
+    "botsort": BoTSORT
+}
+
 
 class OnnxModelHandler(ModelHandler):
-    def __init__(self, predictions_config: PredictionsConfig, model_options: ModelConfig):
+    def __init__(self, predictions_config: PredictionsConfig, model_options: ModelConfig) -> None:
         self.predictions_config = predictions_config
         self.model_options = model_options
         self.session = self._init_session()
         self._load_metadata()
-        self.tracker = KalmanTracker(
-            max_disappeared=30, max_distance=100)
 
     def _init_session(self):
         sess_options = ort.SessionOptions()
@@ -46,6 +50,10 @@ class OnnxModelHandler(ModelHandler):
         providers.append('CPUExecutionProvider')
 
         tprint(f"INIT::ONNX: Using providers: {providers}")
+
+        self.tracker = TRACKERS.get(
+            self.predictions_config.tracker, ByteTrack
+        )()
 
         return ort.InferenceSession(
             str(self.model_options.path),
@@ -125,7 +133,7 @@ class OnnxModelHandler(ModelHandler):
 
             tracked_ids = [-1] * num_masks
             if self.predictions_config.task == "track":
-                tracked_ids = self.tracker.update(scaled_boxes)
+                tracked_ids = self.tracker.update(scaled_boxes, scores, frame)
 
             for i in range(num_masks):
                 bx1, by1, bx2, by2 = scaled_boxes[i]

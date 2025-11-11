@@ -22,7 +22,8 @@ class StreamInferController(VideoStreamTrack):
             model_name=ModelsConfig.S26_OPENVINO_800.value.name,
             task="track",
             conf=0.4,
-            retina_masks=False
+            retina_masks=False,
+            tracker="bytetrack"
         )
 
         self.model_adapter = ModelAdapter(self.predictions_config)
@@ -74,7 +75,11 @@ class StreamInferController(VideoStreamTrack):
                     "conf", self.predictions_config.conf)
             ),
             retina_masks=data.get(
-                "retina_masks", self.predictions_config.retina_masks)
+                "retina_masks", self.predictions_config.retina_masks
+            ),
+            tracker=data.get(
+                "tracker", self.predictions_config.tracker
+            )
         )
 
         if updated_predictions_config != self.predictions_config:

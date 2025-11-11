@@ -42,7 +42,12 @@ rtc_config = RTCConfiguration(
     iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]
 )
 
-MODELS_LIST = [m.value.name for m in ModelsConfig]
+MODELS_LIST = [
+    {
+        "name": m.value.name,
+        "description": m.value.description
+    }
+    for m in ModelsConfig]
 
 
 app = FastAPI()

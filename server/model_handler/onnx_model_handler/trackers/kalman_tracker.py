@@ -71,7 +71,7 @@ class KalmanTracker:
 
         self.last_time = None
 
-    def update(self, boxes):
+    def update(self, boxes, _confidences):
         result_ids = [-1] * len(boxes)
 
         current_time = time.perf_counter()
