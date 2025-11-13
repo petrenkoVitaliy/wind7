@@ -13,8 +13,8 @@ from server.configs.predictions import PredictionsConfig
 from server.model_handler.model_handler import ModelHandler
 from server.model_handler.onnx_model_handler.trackers.botsort_tracker import BoTSORT
 from server.model_handler.onnx_model_handler.trackers.byte_tracker import ByteTrack
+from server.tracker.tracker import Tracker
 from server.utils.formatter import L, tprint
-from server.utils.tracker import Tracker
 
 TRACKERS: dict[str, type[Tracker]] = {
     "bytetrack": ByteTrack,

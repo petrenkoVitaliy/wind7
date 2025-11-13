@@ -6,8 +6,9 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from server.tracker.tracker import Tracker
+from server.tracker.utils import box_diou_matrix
 from server.utils.formatter import L, tprint
-from server.utils.tracker import Tracker, box_diou_matrix
 
 
 class GMC:

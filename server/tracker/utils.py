@@ -1,16 +1,6 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any
-
 import numpy as np
-
-
-class Tracker(ABC):
-    @abstractmethod
-    def update(
-        self, boxes: list[list[float]], scores: list[float], frame: Any = None
-    ) -> list[int]: ...
 
 
 def box_diou_matrix(boxes1: list[list[float]], boxes2: list[list[float]]) -> np.ndarray:
