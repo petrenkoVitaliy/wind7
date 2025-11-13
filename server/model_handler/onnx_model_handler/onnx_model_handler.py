@@ -14,7 +14,7 @@ from server.model_handler.model_handler import ModelHandler
 from server.model_handler.onnx_model_handler.trackers.botsort_tracker import BoTSORT
 from server.model_handler.onnx_model_handler.trackers.byte_tracker import ByteTrack
 from server.tracker.tracker import Tracker
-from server.utils.formatter import L, tprint
+from server.utils import L, tprint
 
 TRACKERS: dict[str, type[Tracker]] = {
     "bytetrack": ByteTrack,
@@ -39,7 +39,10 @@ class OnnxModelHandler(ModelHandler):
         self._load_metadata()
         self._init_tracker()
 
-    def _init_session(self) -> ort.InferenceSession:
+    def _init_session(
+        self, model_options: ModelConfig | None = None
+    ) -> ort.InferenceSession:
+        opts = model_options or self.model_options
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -73,7 +76,7 @@ class OnnxModelHandler(ModelHandler):
         tprint(L.INIT_ONNX_PROVIDERS, providers=providers)
 
         return ort.InferenceSession(
-            str(self.model_options.path), sess_options=sess_options, providers=providers
+            str(opts.path), sess_options=sess_options, providers=providers
         )
 
     def _load_metadata(self) -> None:
@@ -93,19 +96,23 @@ class OnnxModelHandler(ModelHandler):
         model_options: ModelConfig,
     ) -> None:
         old_tracker = self.predictions_config.tracker
-        self.predictions_config = predictions_config
-        self.model_options = model_options
 
         if predictions_config.tracker != old_tracker:
             self._init_tracker()
+            tprint(L.RELOAD_ONNX_TRACKER, tracker=predictions_config.tracker)
 
         try:
             loop = asyncio.get_event_loop()
-            self.session = await loop.run_in_executor(None, self._init_session)
+            new_session = await loop.run_in_executor(
+                None, self._init_session, model_options
+            )
+            self.session = new_session
+            self.predictions_config = predictions_config
+            self.model_options = model_options
             self._load_metadata()
             tprint(L.RELOAD_ONNX_OK, name=predictions_config.model_name)
         except Exception as e:
-            tprint(L.ERROR_ONNX_RELOAD, err=e)
+            tprint(L.ERROR_ONNX_RELOAD, err=e, exc_info=True)
 
     def _preprocess(
         self, frame: np.ndarray

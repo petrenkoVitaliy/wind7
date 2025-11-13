@@ -11,7 +11,7 @@ from av import VideoFrame
 
 from server.configs.predictions import PredictionsConfig
 from server.model_adapter import ModelAdapter
-from server.utils.formatter import L, tprint
+from server.utils import L, tprint
 
 
 @dataclass
@@ -19,7 +19,7 @@ class PeerConnectionState:
     pc: RTCPeerConnection
     active_channel: RTCDataChannel | None = None
     video_track: StreamInferController | None = None
-    _consume_task: asyncio.Task[None] | None = None
+    consume_task: asyncio.Task[None] | None = None
 
     def __hash__(self) -> int:
         return id(self)
@@ -97,7 +97,7 @@ class StreamInferController(VideoStreamTrack):
                     channel.send(orjson.dumps(results).decode())
 
         except Exception as e:
-            tprint(L.ERROR_PROCESS_FRAME, err=e)
+            tprint(L.ERROR_PROCESS_FRAME, err=e, exc_info=True)
         finally:
             self.is_processing = False
             elapsed = (time.perf_counter() - t0) * 1000

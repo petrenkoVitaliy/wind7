@@ -13,7 +13,7 @@ from ultralytics.engine.results import Results
 from server.configs.models import ModelConfig
 from server.configs.predictions import PredictionsConfig
 from server.model_handler.model_handler import ModelHandler
-from server.utils.formatter import L, tprint
+from server.utils import L, tprint
 
 
 class YoloModelHandler(ModelHandler):
@@ -73,7 +73,6 @@ class YoloModelHandler(ModelHandler):
                 new_model.predict(
                     dummy_frame,
                     imgsz=model_options.size,
-                    verbose=True,
                     device=self.device,
                 )
 
@@ -82,13 +81,13 @@ class YoloModelHandler(ModelHandler):
                     self.predictions_config = predictions_config
                     self.model_options = model_options
             except Exception as e:
-                tprint(L.ERROR_YOLO_RELOAD, err=e)
+                tprint(L.ERROR_YOLO_RELOAD, err=e, exc_info=True)
 
         try:
             await asyncio.to_thread(_reload_task)
             tprint(L.RELOAD_YOLO_OK, name=predictions_config.model_name)
         except Exception as e:
-            tprint(L.ERROR_YOLO_FAIL, err=e)
+            tprint(L.ERROR_YOLO_FAIL, err=e, exc_info=True)
         finally:
             self.is_reloading = False
 

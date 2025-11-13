@@ -9,7 +9,7 @@ from server.configs.predictions import PredictionsConfig
 from server.model_handler.model_handler import ModelHandler
 from server.model_handler.onnx_model_handler.onnx_model_handler import OnnxModelHandler
 from server.model_handler.yolo_model_handler.yolo_model_handler import YoloModelHandler
-from server.utils.formatter import L, tprint
+from server.utils import L, tprint
 
 
 class ModelAdapter:

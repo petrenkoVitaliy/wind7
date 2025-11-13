@@ -29,7 +29,7 @@ from twilio.rest import Client
 
 from server.configs.models import ModelsConfig
 from server.stream_infer_controller import PeerConnectionState, StreamInferController
-from server.utils.formatter import L, tprint
+from server.utils import L, tprint
 
 TWILIO_SID: str | None = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN: str | None = os.environ.get("TWILIO_AUTH_TOKEN")
@@ -124,7 +124,7 @@ async def get_ice_config() -> dict[str, list[dict[str, str | list[str]]]]:
             "iceServers": ice_servers,
         }
     except Exception as e:
-        tprint(L.ERROR_TWILIO, err=e)
+        tprint(L.ERROR_TWILIO, err=e, exc_info=True)
         return {"iceServers": [{"urls": "stun:stun.l.google.com:19302"}]}
 
 
@@ -172,7 +172,7 @@ async def offer(request: Request) -> dict[str, str]:
                     await connection_state.video_track.update_predictions_config(data)
 
             except Exception as e:
-                tprint(L.ERROR_PARSE_MSG, err=e)
+                tprint(L.ERROR_PARSE_MSG, err=e, exc_info=True)
 
     @pc.on("track")
     def on_track(track: Any) -> None:
@@ -188,9 +188,9 @@ async def offer(request: Request) -> dict[str, str]:
                         await controller.recv()
 
                 except Exception as e:
-                    tprint(L.ERROR_CONSUMPTION, err=e)
+                    tprint(L.ERROR_CONSUMPTION, err=e, exc_info=True)
 
-            connection_state._consume_task = asyncio.create_task(force_consume())
+            connection_state.consume_task = asyncio.create_task(force_consume())
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
