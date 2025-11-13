@@ -1,87 +1,85 @@
+from __future__ import annotations
+
+from typing import Any
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from server.utils import tprint
-
-
-def box_diou_matrix(boxes1, boxes2):
-    if len(boxes1) == 0 or len(boxes2) == 0:
-        return np.zeros((len(boxes1), len(boxes2)), dtype=np.float32)
-
-    b1 = np.array(boxes1, dtype=np.float32)
-    b2 = np.array(boxes2, dtype=np.float32)
-
-    lt = np.maximum(b1[:, None, :2], b2[None, :, :2])
-    rb = np.minimum(b1[:, None, 2:], b2[None, :, 2:])
-    wh = np.clip(rb - lt, a_min=0, a_max=None)
-    inter = wh[:, :, 0] * wh[:, :, 1]
-
-    area1 = (b1[:, 2] - b1[:, 0]) * (b1[:, 3] - b1[:, 1])
-    area2 = (b2[:, 2] - b2[:, 0]) * (b2[:, 3] - b2[:, 1])
-    union = area1[:, None] + area2[None, :] - inter
-    iou = inter / np.clip(union, a_min=1e-6, a_max=None)
-
-    c1 = (b1[:, :2] + b1[:, 2:]) / 2
-    c2 = (b2[:, :2] + b2[:, 2:]) / 2
-    c_dist = ((c1[:, None, :] - c2[None, :, :]) ** 2).sum(axis=-1)
-
-    elt = np.minimum(b1[:, None, :2], b2[None, :, :2])
-    erb = np.maximum(b1[:, None, 2:], b2[None, :, 2:])
-    ewh = np.clip(erb - elt, a_min=0, a_max=None)
-    e_dist = (ewh ** 2).sum(axis=-1)
-
-    diou = iou - (c_dist / np.clip(e_dist, a_min=1e-6, a_max=None))
-    return diou
+from server.utils.formatter import L, tprint
+from server.utils.tracker import Tracker, box_diou_matrix
 
 
 class ByteTrackBox:
-    def __init__(self, obj_id, box):
-        self.id = obj_id
-        self.disappeared = 0
+    id: int
+    disappeared: int
+    x: np.ndarray
+    F: np.ndarray
+    H: np.ndarray
+    _std_weight_pos: float
+    _std_weight_vel: float
+    P: np.ndarray
+    predicted_box: list[float]
 
-        self.x = np.zeros((8, 1), dtype=np.float32)
+    def __init__(self, obj_id: int, box: list[float]) -> None:
+        self.id: int = obj_id
+        self.disappeared: int = 0
+
+        self.x: np.ndarray = np.zeros((8, 1), dtype=np.float32)
         cx, cy = (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
         w, h = box[2] - box[0], box[3] - box[1]
         h = max(h, 1.0)
 
         self.x[:4, 0] = [cx, cy, w, h]
 
-        self.F = np.eye(8, dtype=np.float32)
+        self.F: np.ndarray = np.eye(8, dtype=np.float32)
         self.F[0, 4] = self.F[1, 5] = self.F[2, 6] = self.F[3, 7] = 1.0
 
-        self.H = np.eye(4, 8, dtype=np.float32)
+        self.H: np.ndarray = np.eye(4, 8, dtype=np.float32)
 
-        self._std_weight_pos = 1. / 10
-        self._std_weight_vel = 1. / 10
+        self._std_weight_pos: float = 1.0 / 10
+        self._std_weight_vel: float = 1.0 / 10
 
         std_pos = self._std_weight_pos * h
         std_vel = self._std_weight_vel * h
 
-        self.P = np.diag([
-            2 * std_pos, 2 * std_pos, 2 * std_pos, 2 * std_pos,
-            10 * std_vel, 10 * std_vel, 10 * std_vel, 10 * std_vel
-        ]) ** 2
+        self.P: np.ndarray = (
+            np.diag(
+                [
+                    2 * std_pos,
+                    2 * std_pos,
+                    2 * std_pos,
+                    2 * std_pos,
+                    10 * std_vel,
+                    10 * std_vel,
+                    10 * std_vel,
+                    10 * std_vel,
+                ]
+            )
+            ** 2
+        )
 
-        self.predicted_box = box
+        self.predicted_box: list[float] = box
 
-    def predict(self):
+    def predict(self) -> list[float]:
         h = max(self.x[3, 0], 1.0)
         std_pos = self._std_weight_pos * h
         std_vel = self._std_weight_vel * h
 
-        Q = np.diag([
-            std_pos, std_pos, std_pos, std_pos,
-            std_vel, std_vel, std_vel, std_vel
-        ]) ** 2
+        Q: np.ndarray = (
+            np.diag(
+                [std_pos, std_pos, std_pos, std_pos, std_vel, std_vel, std_vel, std_vel]
+            )
+            ** 2
+        )
 
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + Q
 
         cx, cy, w, h = self.x[:4, 0]
-        self.predicted_box = [cx - w/2, cy - h/2, cx + w/2, cy + h/2]
+        self.predicted_box = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
         return self.predicted_box
 
-    def correct(self, box):
+    def correct(self, box: list[float]) -> None:
         cx, cy = (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
         w, h = box[2] - box[0], box[3] - box[1]
         h = max(h, 1.0)
@@ -92,27 +90,47 @@ class ByteTrackBox:
 
         y = z - self.H @ self.x
         S = self.H @ self.P @ self.H.T + R
-        K = self.P @ self.H.T @ np.linalg.inv(S)
+        K = np.linalg.solve(S, self.H @ self.P).T
 
         self.x = self.x + K @ y
         self.P = (np.eye(8, dtype=np.float32) - K @ self.H) @ self.P
         self.disappeared = 0
 
 
-class ByteTrack:
-    def __init__(self, track_high_thresh=0.2, track_low_thresh=0.1, new_track_thresh=0.5, match_thresh=1.5, max_disappeared=30):
-        tprint("INIT: ByteTrack initialized")
-        self.next_object_id = 0
-        self.tracks = {}
+class ByteTrack(Tracker):
+    next_object_id: int
+    tracks: dict[int, ByteTrackBox]
+    track_high_thresh: float
+    track_low_thresh: float
+    new_track_thresh: float
+    match_thresh: float
+    max_disappeared: int
 
-        self.track_high_thresh = track_high_thresh
-        self.track_low_thresh = track_low_thresh
-        self.new_track_thresh = new_track_thresh
+    def __init__(
+        self,
+        track_high_thresh: float = 0.2,
+        track_low_thresh: float = 0.1,
+        new_track_thresh: float = 0.5,
+        match_thresh: float = 1.5,
+        max_disappeared: int = 30,
+    ) -> None:
+        tprint(L.INIT_BYTETRACK)
+        self.next_object_id: int = 0
+        self.tracks: dict[int, ByteTrackBox] = {}
 
-        self.match_thresh = match_thresh
-        self.max_disappeared = max_disappeared
+        self.track_high_thresh: float = track_high_thresh
+        self.track_low_thresh: float = track_low_thresh
+        self.new_track_thresh: float = new_track_thresh
 
-    def update(self, boxes, scores, _frame=None):
+        self.match_thresh: float = match_thresh
+        self.max_disappeared: int = max_disappeared
+
+    def update(
+        self,
+        boxes: list[list[float]],
+        scores: list[float],
+        frame: Any = None,  # noqa: ARG002
+    ) -> list[int]:
         result_ids = [-1] * len(boxes)
         if len(boxes) == 0:
             for obj_id in list(self.tracks.keys()):
@@ -124,10 +142,12 @@ class ByteTrack:
         for track in self.tracks.values():
             track.predict()
 
-        high_indices = [i for i, s in enumerate(
-            scores) if s >= self.track_high_thresh]
-        low_indices = [i for i, s in enumerate(
-            scores) if self.track_low_thresh <= s < self.track_high_thresh]
+        high_indices = [i for i, s in enumerate(scores) if s >= self.track_high_thresh]
+        low_indices = [
+            i
+            for i, s in enumerate(scores)
+            if self.track_low_thresh <= s < self.track_high_thresh
+        ]
 
         high_boxes = [boxes[i] for i in high_indices]
         low_boxes = [boxes[i] for i in low_indices]
@@ -144,7 +164,7 @@ class ByteTrack:
 
             rows, cols = linear_sum_assignment(cost_matrix)
 
-            for r, c in zip(rows, cols):
+            for r, c in zip(rows, cols, strict=True):
                 if cost_matrix[r, c] <= self.match_thresh:
                     obj_id = track_ids_list[r]
                     orig_idx = high_indices[c]
@@ -157,15 +177,15 @@ class ByteTrack:
 
         unmatched_tracks_list = list(unmatched_tracks)
         remaining_predicted_boxes = [
-            self.tracks[tid].predicted_box for tid in unmatched_tracks_list]
+            self.tracks[tid].predicted_box for tid in unmatched_tracks_list
+        ]
 
         if len(remaining_predicted_boxes) > 0 and len(low_boxes) > 0:
-            diou_matrix_low = box_diou_matrix(
-                remaining_predicted_boxes, low_boxes)
+            diou_matrix_low = box_diou_matrix(remaining_predicted_boxes, low_boxes)
             cost_matrix_low = 1.0 - diou_matrix_low
 
             rows, cols = linear_sum_assignment(cost_matrix_low)
-            for r, c in zip(rows, cols):
+            for r, c in zip(rows, cols, strict=True):
                 if cost_matrix_low[r, c] <= 1.0:
                     obj_id = unmatched_tracks_list[r]
                     orig_idx = low_indices[c]

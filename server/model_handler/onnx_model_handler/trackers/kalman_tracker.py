@@ -1,42 +1,53 @@
+from __future__ import annotations
+
 import time
+
 import numpy as np
 from scipy.spatial import distance
 
 
 class SingleTrackNumPy:
-    def __init__(self, obj_id, initial_centroid):
-        self.id = obj_id
-        self.disappeared = 0
+    id: int
+    disappeared: int
+    F: np.ndarray
+    H: np.ndarray
+    Q: np.ndarray
+    R: np.ndarray
+    P: np.ndarray
+    x: np.ndarray
+    xpred: np.ndarray
+    Ppred: np.ndarray
+    predicted_centroid: tuple[int, int]
 
-        self.F = np.eye(4, dtype=np.float32)
+    def __init__(self, obj_id: int, initial_centroid: tuple[float, float]) -> None:
+        self.id: int = obj_id
+        self.disappeared: int = 0
 
-        self.H = np.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0]
-        ], dtype=np.float32)
+        self.F: np.ndarray = np.eye(4, dtype=np.float32)
 
-        self.Q = np.eye(4, dtype=np.float32) * 0.1
-        self.R = np.eye(2, dtype=np.float32) * 4.0
+        self.H: np.ndarray = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], dtype=np.float32)
 
-        self.P = np.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 100, 0],
-            [0, 0, 0, 100]
-        ], dtype=np.float32)
+        self.Q: np.ndarray = np.eye(4, dtype=np.float32) * 0.1
+        self.R: np.ndarray = np.eye(2, dtype=np.float32) * 4.0
 
-        self.x = np.array([
-            [initial_centroid[0]],
-            [initial_centroid[1]],
-            [0.0],
-            [0.0]
-        ], dtype=np.float32)
+        self.P: np.ndarray = np.array(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 100, 0], [0, 0, 0, 100]],
+            dtype=np.float32,
+        )
 
-        self.xpred = np.copy(self.x)
-        self.Ppred = np.copy(self.P)
-        self.predicted_centroid = initial_centroid
+        self.x: np.ndarray = np.array(
+            [[initial_centroid[0]], [initial_centroid[1]], [0.0], [0.0]],
+            dtype=np.float32,
+        )
 
-    def predict(self, dt):
+        self.xpred: np.ndarray = np.copy(self.x)
+        self.Ppred: np.ndarray = np.copy(self.P)
+        self.predicted_centroid: tuple[int, int] = (
+            int(initial_centroid[0]),
+            int(initial_centroid[1]),
+        )
+
+    def predict(self, dt: float) -> tuple[int, int]:
         self.F[0, 2] = dt
         self.F[1, 3] = dt
 
@@ -49,29 +60,41 @@ class SingleTrackNumPy:
         self.predicted_centroid = (int(self.x[0, 0]), int(self.x[1, 0]))
         return self.predicted_centroid
 
-    def correct(self, centroid):
+    def correct(self, centroid: tuple[float, float]) -> None:
         z = np.array([[centroid[0]], [centroid[1]]], dtype=np.float32)
         y = z - self.H @ self.xpred
         S = self.H @ self.Ppred @ self.H.T + self.R
-        K = self.Ppred @ self.H.T @ np.linalg.inv(S)
+        K = np.linalg.solve(S, self.H @ self.Ppred).T
 
         self.x = self.xpred + K @ y
-        I = np.eye(4, dtype=np.float32)
-        self.P = (I - K @ self.H) @ self.Ppred
+        ident = np.eye(4, dtype=np.float32)
+        self.P = (ident - K @ self.H) @ self.Ppred
         self.disappeared = 0
 
 
 class KalmanTracker:
-    def __init__(self, max_disappeared=30, max_distance=100, default_dt=0.05):
-        self.next_object_id = 0
-        self.tracks = {}
-        self.max_disappeared = max_disappeared
-        self.max_distance = max_distance
-        self.default_dt = default_dt
+    next_object_id: int
+    tracks: dict[int, SingleTrackNumPy]
+    max_disappeared: int
+    max_distance: float
+    default_dt: float
+    last_time: float | None
 
-        self.last_time = None
+    def __init__(
+        self,
+        max_disappeared: int = 30,
+        max_distance: float = 100,
+        default_dt: float = 0.05,
+    ) -> None:
+        self.next_object_id: int = 0
+        self.tracks: dict[int, SingleTrackNumPy] = {}
+        self.max_disappeared: int = max_disappeared
+        self.max_distance: float = max_distance
+        self.default_dt: float = default_dt
 
-    def update(self, boxes, _confidences):
+        self.last_time: float | None = None
+
+    def update(self, boxes: list[list[float]], _confidences: list[float]) -> list[int]:
         result_ids = [-1] * len(boxes)
 
         current_time = time.perf_counter()
@@ -96,31 +119,33 @@ class KalmanTracker:
 
         input_centroids = np.zeros((len(boxes), 2), dtype="int")
         for i, (startX, startY, endX, endY) in enumerate(boxes):
-            input_centroids[i] = (int((startX + endX) / 2.0),
-                                  int((startY + endY) / 2.0))
+            input_centroids[i] = (
+                int((startX + endX) / 2.0),
+                int((startY + endY) / 2.0),
+            )
 
         if len(self.tracks) == 0:
             for i in range(len(input_centroids)):
                 result_ids[i] = self.register(input_centroids[i])
         else:
             object_ids = list(self.tracks.keys())
-            predicted_centroids = [
-                t.predicted_centroid for t in self.tracks.values()]
+            predicted_centroids = [t.predicted_centroid for t in self.tracks.values()]
 
             D = distance.cdist(np.array(predicted_centroids), input_centroids)
             rows = D.min(axis=1).argsort()
             cols = D.argmin(axis=1)[rows]
 
-            used_rows, used_cols = set(), set()
+            used_rows: set[int] = set()
+            used_cols: set[int] = set()
 
-            for row, col in zip(rows, cols):
+            for row, col in zip(rows, cols, strict=True):
                 if row in used_rows or col in used_cols:
                     continue
                 if D[row, col] > self.max_distance:
                     continue
 
                 object_id = object_ids[row]
-                self.tracks[object_id].correct(input_centroids[col])
+                self.tracks[object_id].correct(tuple(input_centroids[col]))
                 result_ids[col] = object_id
 
                 used_rows.add(row)
@@ -140,9 +165,10 @@ class KalmanTracker:
 
         return result_ids
 
-    def register(self, centroid):
+    def register(self, centroid: tuple[float, float]) -> int:
         self.tracks[self.next_object_id] = SingleTrackNumPy(
-            self.next_object_id, centroid)
+            self.next_object_id, centroid
+        )
         obj_id = self.next_object_id
         self.next_object_id += 1
         return obj_id

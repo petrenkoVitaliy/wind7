@@ -9,3 +9,4 @@ tmp.txt
 /logs
 **/__pycache__
 **/*.pyc
+/.mypy_cache

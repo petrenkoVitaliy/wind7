@@ -1,31 +1,45 @@
-import time
-import threading
+from __future__ import annotations
 
+import asyncio
+import threading
+import time
+from typing import Any
+
+import numpy as np
 import torch
 from ultralytics import YOLO
-import asyncio
-import numpy as np
+from ultralytics.engine.results import Results
 
-from server.model_configs import ModelConfig
-from server.predictions_config import PredictionsConfig
-from server.utils import tprint
+from server.configs.models import ModelConfig
+from server.configs.predictions import PredictionsConfig
 from server.model_handler.model_handler import ModelHandler
+from server.utils.formatter import L, tprint
 
 
 class YoloModelHandler(ModelHandler):
-    def __init__(self, predictions_config: PredictionsConfig, model_options: ModelConfig):
-        self.predictions_config = predictions_config
-        self.model_options = model_options
+    predictions_config: PredictionsConfig
+    model_options: ModelConfig
+    model: YOLO
+    device: str
+    use_half: bool
+    model_lock: threading.Lock
+    is_reloading: bool
 
-        self.model = YOLO(str(self.model_options.path), task='segment')
+    def __init__(
+        self, predictions_config: PredictionsConfig, model_options: ModelConfig
+    ) -> None:
+        self.predictions_config: PredictionsConfig = predictions_config
+        self.model_options: ModelConfig = model_options
 
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.use_half = self.device == 'cuda'
+        self.model: YOLO = YOLO(str(self.model_options.path), task="segment")
 
-        self.model_lock = threading.Lock()
-        self.is_reloading = False
+        self.device: str = "cuda" if torch.cuda.is_available() else "cpu"
+        self.use_half: bool = self.device == "cuda"
 
-    def get_predictions(self, frame):
+        self.model_lock: threading.Lock = threading.Lock()
+        self.is_reloading: bool = False
+
+    def get_predictions(self, frame: np.ndarray) -> dict[str, Any] | None:
         if self.is_reloading:
             return None
 
@@ -33,44 +47,52 @@ class YoloModelHandler(ModelHandler):
             return None
 
         try:
-            get_results_strategy = self._get_track_results if self.predictions_config.task == "track" else self._get_predict_results
-            return self._parse_results(get_results_strategy(frame), frame)
+            get_results_strategy = (
+                self._get_track_results
+                if self.predictions_config.task == "track"
+                else self._get_predict_results
+            )
+            return self._parse_results(get_results_strategy(frame))
 
         finally:
             self.model_lock.release()
 
-    async def reload_model(self, predictions_config: PredictionsConfig, model_options: ModelConfig):
+    async def reload_model(
+        self, predictions_config: PredictionsConfig, model_options: ModelConfig
+    ) -> None:
         self.is_reloading = True
 
-        def _reload_task():
+        def _reload_task() -> None:
             try:
-                tprint(
-                    f"RELOAD::YOLO: Loading new YOLO model for {predictions_config.model_name}...")
-                new_model = YOLO(str(model_options.path), task='segment')
+                tprint(L.RELOAD_YOLO_LOADING, name=predictions_config.model_name)
+                new_model = YOLO(str(model_options.path), task="segment")
 
-                tprint("RELOAD::YOLO: Warming up YOLO...")
                 dummy_frame = np.zeros(
-                    (model_options.size, model_options.size, 3), dtype=np.uint8)
+                    (model_options.size, model_options.size, 3), dtype=np.uint8
+                )
                 new_model.predict(
-                    dummy_frame, imgsz=model_options.size, verbose=True, device='cpu')
+                    dummy_frame,
+                    imgsz=model_options.size,
+                    verbose=True,
+                    device=self.device,
+                )
 
                 with self.model_lock:
                     self.model = new_model
                     self.predictions_config = predictions_config
                     self.model_options = model_options
             except Exception as e:
-                tprint(f"ERROR::YOLO: YOLO reload failed: {e}")
+                tprint(L.ERROR_YOLO_RELOAD, err=e)
 
         try:
             await asyncio.to_thread(_reload_task)
-            tprint(
-                f"RELOAD::YOLO: successfully: {predictions_config.model_name}")
+            tprint(L.RELOAD_YOLO_OK, name=predictions_config.model_name)
         except Exception as e:
-            tprint(f"ERROR::YOLO Failed to reload model: {e}")
+            tprint(L.ERROR_YOLO_FAIL, err=e)
         finally:
             self.is_reloading = False
 
-    def _get_track_results(self, frame):
+    def _get_track_results(self, frame: np.ndarray) -> Results:
         return self.model.track(
             frame,
             device=self.device,
@@ -82,10 +104,10 @@ class YoloModelHandler(ModelHandler):
             half=self.use_half,
             persist=True,
             verbose=False,
-            retina_masks=self.predictions_config.retina_masks
+            retina_masks=self.predictions_config.retina_masks,
         )[0]
 
-    def _get_predict_results(self, frame):
+    def _get_predict_results(self, frame: np.ndarray) -> Results:
         return self.model.predict(
             frame,
             device=self.device,
@@ -98,7 +120,13 @@ class YoloModelHandler(ModelHandler):
             verbose=False,
         )[0]
 
-    def _parse_results(self, results, _frame):
+    @staticmethod
+    def _to_numpy(x: torch.Tensor | np.ndarray) -> np.ndarray:
+        if isinstance(x, torch.Tensor):
+            return x.cpu().numpy()
+        return np.asarray(x)
+
+    def _parse_results(self, results: Results) -> dict[str, Any]:
         t_start = time.perf_counter()
 
         if results.boxes is None or len(results.boxes) == 0:
@@ -106,43 +134,49 @@ class YoloModelHandler(ModelHandler):
 
         boxes = results.boxes
         names = results.names
-        has_masks = results.masks is not None
 
-        coords = boxes.xyxyn.cpu().numpy()
-        confs = boxes.conf.cpu().numpy()
-        cls = boxes.cls.cpu().numpy().astype(int)
-        ids = boxes.id.cpu().numpy().astype(
-            int) if boxes.id is not None else [-1]*len(boxes)
+        coords = self._to_numpy(boxes.xyxyn)
+        confs = self._to_numpy(boxes.conf)
+        cls = self._to_numpy(boxes.cls).astype(int)
+        ids = (
+            self._to_numpy(boxes.id).astype(int)
+            if boxes.id is not None
+            else [-1] * len(boxes)
+        )
 
-        masks_data = results.masks.xyn if has_masks else [[]] * len(boxes)
-
-        predictions = [
+        predictions: list[dict[str, Any]] = [
             {
                 "box": [float(c) for c in coords[i]],
-                "mask": masks_data[i].tolist() if has_masks else [],
                 "label": names[cls[i]],
                 "id": int(ids[i]),
-                "conf": round(float(confs[i]), 2)
+                "conf": round(float(confs[i]), 2),
             }
             for i in range(len(coords))
         ]
+
+        if results.masks is not None:
+            masks_xyn = results.masks.xyn
+            for i, p in enumerate(predictions):
+                p["mask"] = masks_xyn[i].tolist()
+        else:
+            for p in predictions:
+                p["mask"] = []
 
         t_end = time.perf_counter()
 
         map_duration = t_end - t_start
         metrics = self._get_metrics(results, map_duration)
 
-        return {
-            "data": predictions,
-            "metrics": metrics
-        }
+        return {"data": predictions, "metrics": metrics}
 
-    def _get_metrics(self, results, map_duration):
+    def _get_metrics(self, results: Results, map_duration: float) -> dict[str, float]:
         speed = results.speed
         return {
-            "pre": round(float(speed.get('preprocess', 0)), 1),
-            "inf": round(float(speed.get('inference', 0)), 1),
-            "post": round(float(speed.get('postprocess', 0)), 1),
+            "pre": round(float(speed.get("preprocess", 0.0) or 0.0), 1),
+            "inf": round(float(speed.get("inference", 0.0) or 0.0), 1),
+            "post": round(float(speed.get("postprocess", 0.0) or 0.0), 1),
             "normalize": round(float(map_duration), 1),
-            "total": round(float(sum(speed.values()) + map_duration), 1)
+            "total": round(
+                float(sum(v or 0.0 for v in speed.values()) + map_duration), 1
+            ),
         }

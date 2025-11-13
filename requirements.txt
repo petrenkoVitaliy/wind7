@@ -11,3 +11,7 @@ onnxruntime-openvino
 onnxruntime-gpu==1.17.1
 psutil
 nvidia-ml-py
+orjson
+av
+scipy
+torch
