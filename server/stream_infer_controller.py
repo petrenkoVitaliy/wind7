@@ -28,7 +28,7 @@ class PeerConnectionState:
 class StreamInferController(VideoStreamTrack):
     track: MediaStreamTrack
     state: PeerConnectionState
-    is_processing: bool
+    _processing_lock: asyncio.Lock
     predictions_config: PredictionsConfig
     model_adapter: ModelAdapter | None
     _frames_received: int
@@ -47,7 +47,7 @@ class StreamInferController(VideoStreamTrack):
         self.track: MediaStreamTrack = track
         self.state: PeerConnectionState = state
 
-        self.is_processing: bool = False
+        self._processing_lock: asyncio.Lock = asyncio.Lock()
 
         self.predictions_config: PredictionsConfig = PredictionsConfig(
             model_name=default_model_name,
@@ -70,40 +70,39 @@ class StreamInferController(VideoStreamTrack):
         tprint(L.INIT_VIDEO_TRANSFORM_TRACK)
 
     async def process_frame(self, frame: VideoFrame) -> None:
-        if self.is_processing:
+        if self._processing_lock.locked():
             self._frames_dropped += 1
             return
 
-        self.is_processing = True
-        t0 = time.perf_counter()
-        try:
-            channel = self.state.active_channel
+        async with self._processing_lock:
+            t0 = time.perf_counter()
+            try:
+                channel = self.state.active_channel
 
-            def _inference_task() -> dict[str, Any] | None:
-                img = frame.to_ndarray(format="bgr24")
-                if self.model_adapter is None:
-                    return None
-                return self.model_adapter.get_predictions(img)
+                def _inference_task() -> dict[str, Any] | None:
+                    img = frame.to_ndarray(format="bgr24")
+                    if self.model_adapter is None:
+                        return None
+                    return self.model_adapter.get_predictions(img)
 
-            if (
-                channel
-                and channel.readyState == "open"
-                and self.model_adapter is not None
-            ):
-                loop = asyncio.get_running_loop()
-                results = await loop.run_in_executor(None, _inference_task)
+                if (
+                    channel
+                    and channel.readyState == "open"
+                    and self.model_adapter is not None
+                ):
+                    loop = asyncio.get_running_loop()
+                    results = await loop.run_in_executor(None, _inference_task)
 
-                if results is not None:
-                    channel.send(orjson.dumps(results).decode())
+                    if results is not None:
+                        channel.send(orjson.dumps(results).decode())
 
-        except Exception as e:
-            tprint(L.ERROR_PROCESS_FRAME, err=e, exc_info=True)
-        finally:
-            self.is_processing = False
-            elapsed = (time.perf_counter() - t0) * 1000
-            self._total_inference_ms += elapsed
-            self._inference_count += 1
-            self._frames_received += 1
+            except Exception as e:
+                tprint(L.ERROR_PROCESS_FRAME, err=e, exc_info=True)
+            finally:
+                elapsed = (time.perf_counter() - t0) * 1000
+                self._total_inference_ms += elapsed
+                self._inference_count += 1
+                self._frames_received += 1
 
     async def update_predictions_config(self, data: Any) -> None:
         updated_predictions_config = PredictionsConfig(
@@ -128,14 +127,15 @@ class StreamInferController(VideoStreamTrack):
 
     async def recv(self) -> VideoFrame:
         frame = cast(VideoFrame, await self.track.recv())
-        if not self.is_processing:
+        if not self._processing_lock.locked():
             self._process_task = asyncio.create_task(self.process_frame(frame))
         return frame
 
     async def close(self) -> None:
-        if self._process_task is not None:
-            self._process_task.cancel()
-            self._process_task = None
+        for task in (self._process_task, self.state.consume_task):
+            if task is not None:
+                task.cancel()
+        self._process_task = None
 
     def get_stats(self) -> dict[str, Any]:
         avg_ms = (

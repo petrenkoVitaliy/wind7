@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -23,7 +24,7 @@ class YoloModelHandler(ModelHandler):
     device: str
     use_half: bool
     model_lock: threading.Lock
-    is_reloading: bool
+    is_reloading: threading.Event
 
     def __init__(
         self, predictions_config: PredictionsConfig, model_options: ModelConfig
@@ -37,10 +38,10 @@ class YoloModelHandler(ModelHandler):
         self.use_half: bool = self.device == "cuda"
 
         self.model_lock: threading.Lock = threading.Lock()
-        self.is_reloading: bool = False
+        self.is_reloading: threading.Event = threading.Event()
 
     def get_predictions(self, frame: np.ndarray) -> dict[str, Any] | None:
-        if self.is_reloading:
+        if self.is_reloading.is_set():
             return None
 
         if not self.model_lock.acquire(blocking=False):
@@ -60,7 +61,7 @@ class YoloModelHandler(ModelHandler):
     async def reload_model(
         self, predictions_config: PredictionsConfig, model_options: ModelConfig
     ) -> None:
-        self.is_reloading = True
+        self.is_reloading.set()
 
         def _reload_task() -> None:
             try:
@@ -89,7 +90,7 @@ class YoloModelHandler(ModelHandler):
         except Exception as e:
             tprint(L.ERROR_YOLO_FAIL, err=e, exc_info=True)
         finally:
-            self.is_reloading = False
+            self.is_reloading.clear()
 
     def _get_track_results(self, frame: np.ndarray) -> Results:
         return self.model.track(
@@ -99,7 +100,7 @@ class YoloModelHandler(ModelHandler):
             imgsz=self.model_options.size,
             conf=self.predictions_config.conf,
             iou=0.45,
-            tracker="server/model_handler/yolo_model_handler/trackers/custom_tracker.yaml",
+            tracker=str(Path(__file__).parent / "trackers" / "custom_tracker.yaml"),
             half=self.use_half,
             persist=True,
             verbose=False,

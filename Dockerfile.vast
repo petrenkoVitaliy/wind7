@@ -37,11 +37,9 @@ COPY main.py .
 
 EXPOSE 8000
 
-CMD sh -c "\
-    ngrok config add-authtoken $NGROK_AUTHTOKEN && \
-    ngrok http 8000 --log=stdout & \
-    echo 'Starting TensorRT export...' && \
-    yolo export model=models/best.pt format=engine half=True device=0 && \
+CMD sh -c "ngrok config add-authtoken $NGROK_AUTHTOKEN && \
+    ngrok http 8000 > /dev/null & \
     uvicorn main:app --host 0.0.0.0 --port 8000"
 
     # CMD sh -c "... [ ! -f models/best.engine ] && yolo export model=models/best.pt format=engine half=True device=0; uvicorn main:app ..."
+    # yolo export model=models/best.pt format=engine half=True device=0

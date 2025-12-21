@@ -17,9 +17,9 @@ class ModelAdapter:
         self.model_type: ModelType | None = None
         self.model_handler: ModelHandler | None = None
 
-        self._update_model_handler(predictions_config)
+        self._ensure_handler_type(predictions_config)
 
-    def _update_model_handler(
+    def _ensure_handler_type(
         self, predictions_config: PredictionsConfig
     ) -> tuple[bool, ModelConfig]:
         model_options = ModelsConfig[predictions_config.model_name].value
@@ -47,9 +47,7 @@ class ModelAdapter:
         return self.model_handler.get_predictions(frame)
 
     async def reload_model(self, predictions_config: PredictionsConfig) -> None:
-        is_updated_handler, model_options = self._update_model_handler(
-            predictions_config
-        )
+        handler_changed, model_options = self._ensure_handler_type(predictions_config)
 
-        if not is_updated_handler and self.model_handler is not None:
+        if not handler_changed and self.model_handler is not None:
             await self.model_handler.reload_model(predictions_config, model_options)

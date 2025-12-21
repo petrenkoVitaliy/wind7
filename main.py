@@ -24,6 +24,7 @@ from pynvml import (
     nvmlDeviceGetMemoryInfo,
     nvmlDeviceGetUtilizationRates,
     nvmlInit,
+    nvmlShutdown,
 )
 from twilio.rest import Client
 
@@ -62,14 +63,20 @@ MODELS_LIST: list[dict[str, str]] = [
 ]
 
 
-app: FastAPI = FastAPI()
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    with contextlib.suppress(Exception):
+        nvmlInit()
+    try:
+        yield
+    finally:
+        nvmlShutdown()
+
+
+app: FastAPI = FastAPI(lifespan=lifespan)
 relay: MediaRelay = MediaRelay()
 
 peer_connections: set[PeerConnectionState] = set()
-
-
-with contextlib.suppress(Exception):
-    nvmlInit()
 
 
 def get_system_stats() -> dict[str, str]:

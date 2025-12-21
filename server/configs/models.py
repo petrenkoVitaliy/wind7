@@ -37,12 +37,12 @@ class ModelsConfig(Enum):
         model_type=ModelType.YOLO,
         description="YOLO|Raw|S|800",
     )
-    S26_ENGINE_800 = ModelConfig(
+    S26_ENGINE_800_3060 = ModelConfig(
         size=800,
-        name="S26_ENGINE_800",
-        path=MODEL_BASE_PATH / "best.engine",
+        name="S26_ENGINE_800_3060",
+        path=MODEL_BASE_PATH / "best_rtx3060.engine",
         model_type=ModelType.YOLO,
-        description="YOLO|TensorRT|S|800",
+        description="YOLO|TensorRT|S|800|Half|RTX3060",
     )
     S26_OPENVINO_640 = ModelConfig(
         size=640,
@@ -106,11 +106,4 @@ class ModelsConfig(Enum):
         path=MODEL_BASE_PATH / "best_onnx_640_s.onnx",
         model_type=ModelType.ONNX,
         description="ONNX|S|640",
-    )
-    S26_ENGINE_ONNX_800 = ModelConfig(
-        size=800,
-        name="S26_ENGINE_ONNX_800",
-        path=MODEL_BASE_PATH / "best.engine",
-        model_type=ModelType.ONNX,
-        description="ONNX|TensorRT|S|800",
     )

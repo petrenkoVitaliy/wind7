@@ -102,10 +102,7 @@ class OnnxModelHandler(ModelHandler):
             tprint(L.RELOAD_ONNX_TRACKER, tracker=predictions_config.tracker)
 
         try:
-            loop = asyncio.get_event_loop()
-            new_session = await loop.run_in_executor(
-                None, self._init_session, model_options
-            )
+            new_session = await asyncio.to_thread(self._init_session, model_options)
             self.session = new_session
             self.predictions_config = predictions_config
             self.model_options = model_options
