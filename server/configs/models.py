@@ -44,6 +44,13 @@ class ModelsConfig(Enum):
         model_type=ModelType.YOLO,
         description="YOLO|TensorRT|S|800|Half|RTX3060",
     )
+    S26_ENGINE_800_3060_1 = ModelConfig(
+        size=800,
+        name="S26_ENGINE_800_3060_1",
+        path=MODEL_BASE_PATH / "best_rtx3060_1.engine",
+        model_type=ModelType.YOLO,
+        description="YOLO|TensorRT|S|800|Half|RTX3060",
+    )
     S26_OPENVINO_640 = ModelConfig(
         size=640,
         name="S26_OPENVINO_640",

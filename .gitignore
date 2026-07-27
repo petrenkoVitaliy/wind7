@@ -11,3 +11,6 @@ tmp.txt
 **/*.pyc
 /.ruff_cache
 /.mypy_cache
+/assets
+/snapshots
+/snapshots_source

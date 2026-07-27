@@ -11,6 +11,8 @@ pinned: false
 
 High-performance, low latency real-time object detection, segmentation and tracking system. Built with WebRTC for seamless video streaming and bidirectional data exchange.
 
+https://github.com/user-attachments/assets/b4bffb0f-4549-483b-afb8-f1a5a187c3e8
+
 ## 📌 About the Project
 
 **Wind7** is a client-server application that streams video from a client's camera to a server via WebRTC, asynchronously processes frames using ML models (YOLO, ONNX, TensorRT, OpenVINO), and instantly returns inference results (bounding boxes, segmentation polygons, tracking IDs) via WebRTC DataChannels.

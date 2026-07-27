@@ -1,34 +1,28 @@
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH \
-    DEBIAN_FRONTEND=noninteractive \
+ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    YOLO_CONFIG_DIR=/app/.config
+    YOLO_CONFIG_DIR=/app/.config \
+    LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
-RUN apt-get update && apt-get install -y curl gnupg && \
-    curl -O https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb && \
-    dpkg -i cuda-keyring_1.1-1_all.deb && \
-    apt-get update && \
-    apt-get install -y \
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3-pip \
     libgl1 \
     libglib2.0-0 \
     ffmpeg \
-    libcudnn9-cuda-12 \
-    && curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | gpg --dearmor -o /etc/apt/keyrings/ngrok.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/ngrok.gpg] https://ngrok-agent.s3.amazonaws.com buster main" | tee /etc/apt/sources.list.d/ngrok.list \
-    && apt-get update && apt-get install -y ngrok \
-    && rm -rf /var/lib/apt/lists/* cuda-keyring_1.1-1_all.deb
-
-WORKDIR /app
+    curl \
+    && curl -s https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz | tar xvz -C /usr/local/bin \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /app/.config/Ultralytics && chmod -R 777 /app/.config
 
 COPY requirements-vast.txt .
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements-vast.txt
+    pip3 install --no-cache-dir -r requirements-vast.txt "tensorrt-cu12>=7.0.0,!=10.2.0"
 
 COPY client/ ./client/
 COPY models/ ./models/
@@ -37,9 +31,18 @@ COPY main.py .
 
 EXPOSE 8000
 
-CMD sh -c "ngrok config add-authtoken $NGROK_AUTHTOKEN && \
+# CMD sh -c "ngrok config add-authtoken $NGROK_AUTHTOKEN && \
+#     ngrok http 8000 > /dev/null & \
+#     uvicorn main:app --host 0.0.0.0 --port 8000"
+
+# CMD sh -c "... [ ! -f models/best.engine ] && yolo export model=models/best.pt format=engine half=True device=0; uvicorn main:app ..."
+#     yolo export model=models/best.pt format=engine half=True device=0
+
+CMD sh -c "if [ ! -f models/best_rtx3060.engine ]; then \
+        echo 'Engine not found, generating...' && \
+        yolo export model=models/best.pt format=engine half=True device=0 imgsz=800 && \
+        mv models/best.engine models/best_rtx3060.engine; \
+    fi && \
+    ngrok config add-authtoken $NGROK_AUTHTOKEN && \
     ngrok http 8000 > /dev/null & \
     uvicorn main:app --host 0.0.0.0 --port 8000"
-
-    # CMD sh -c "... [ ! -f models/best.engine ] && yolo export model=models/best.pt format=engine half=True device=0; uvicorn main:app ..."
-    # yolo export model=models/best.pt format=engine half=True device=0
